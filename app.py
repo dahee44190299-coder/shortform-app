@@ -119,6 +119,9 @@ defaults = {
     "current_step":1, "source_type":"URL",
     "pexels_searched":False, "pexels_results":[], "youtube_results":[], "instagram_links":[],
     "_last_coupang_url":"", "_last_product":"", "_last_category":"",
+    # ── 조회수 최적화 ──
+    "hook_test_enabled":False, "hook_version_count":2, "hook_versions":[],
+    "pattern_interrupt_enabled":True, "retention_booster_enabled":True,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -445,7 +448,334 @@ def get_video_duration(path):
     except:
         return 0
 
-def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2, cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF"):
+# ═══════════════════════════════════════════════════════════════
+# 조회수 최적화 헬퍼 함수
+# ═══════════════════════════════════════════════════════════════
+
+def generate_hooks(product_name, category="기타", content_mode="클릭유도형", count=3):
+    """AI로 Hook 텍스트(A/B/C) 생성. API 없으면 템플릿 fallback."""
+    hook_types = [
+        ("A", "문제 제시형", f"{product_name} 때문에 고민이셨죠? 이거 하나면 해결됩니다"),
+        ("B", "놀람형", f"이거 하나로 끝났습니다, 왜 이제 알았지… {product_name}"),
+        ("C", "손해 회피형", f"이거 모르면 계속 손해봅니다, {product_name} 지금 바로 확인하세요"),
+    ]
+    if has_key("ANTHROPIC_API_KEY"):
+        try:
+            result = call_claude(
+                "숏폼 Hook 전문가. 각 유형별 1문장만 출력. 번호 붙여서.",
+                f"제품: {product_name}\n카테고리: {category}\n콘텐츠 목적: {content_mode}\n\n"
+                "아래 3가지 유형으로 숏폼 첫 3초 Hook 문장을 1개씩 만들어줘.\n"
+                "A) 문제 제시형: 시청자 문제 공감 → 해결 암시\n"
+                "B) 놀람형: 결과 먼저 보여주고 궁금증 유발\n"
+                "C) 손해 회피형: 안 쓰면 손해라는 긴박감\n\n"
+                "조건: 각 20자 이내, 이모지 금지, 말투는 구어체\n"
+                "형식: A) 문장\\nB) 문장\\nC) 문장"
+            )
+            if result:
+                lines = [l.strip() for l in result.strip().split("\n") if l.strip()]
+                parsed = []
+                for l in lines:
+                    clean = l.lstrip("ABC)）: ·•-").strip()
+                    if clean:
+                        parsed.append(clean)
+                if len(parsed) >= 3:
+                    return [
+                        {"name": "A", "type": "문제 제시형", "hook_text": parsed[0]},
+                        {"name": "B", "type": "놀람형", "hook_text": parsed[1]},
+                        {"name": "C", "type": "손해 회피형", "hook_text": parsed[2]},
+                    ][:count]
+        except:
+            pass
+    # fallback: 템플릿 기반
+    return [{"name": h[0], "type": h[1], "hook_text": h[2]} for h in hook_types[:count]]
+
+
+def ensure_hook_clip_duration(clip_path, min_dur=3.0):
+    """Hook 클립이 min_dur보다 짧으면 loop/freeze로 보장. 원본 이상이면 trim."""
+    dur = get_video_duration(clip_path)
+    if dur <= 0:
+        return clip_path, min_dur
+    if dur >= min_dur:
+        # trim to min_dur
+        tmp = _ensure_dir("shortform_hooks")
+        out = tmp / f"hook_trim_{int(min_dur)}s.mp4"
+        subprocess.run([
+            "ffmpeg", "-y", "-i", clip_path,
+            "-t", str(min_dur),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-c:a", "aac", "-b:a", "128k",
+            str(out)
+        ], capture_output=True, text=True, timeout=30)
+        return str(out) if out.exists() else clip_path, min_dur
+    # dur < min_dur → loop
+    loops_needed = int(min_dur / dur) + 1
+    tmp = _ensure_dir("shortform_hooks")
+    concat_file = tmp / "hook_loop.txt"
+    with open(concat_file, "w") as f:
+        for _ in range(loops_needed):
+            f.write(f"file '{clip_path}'\n")
+    out = tmp / f"hook_loop_{int(min_dur)}s.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-t", str(min_dur),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        str(out)
+    ], capture_output=True, text=True, timeout=30)
+    return str(out) if out.exists() else clip_path, min_dur
+
+
+def build_pattern_interrupt_filters(total_dur, hook_dur=3.0):
+    """Pattern Interrupt FFmpeg 필터 리스트 생성. Hook 구간(0~hook_dur) 제외."""
+    filters = []
+    if total_dur <= hook_dur + 1:
+        return filters
+    body_dur = total_dur - hook_dur
+    # 10% 지점: zoom in (1.15x, 0.5초간)
+    t_zoom = hook_dur + body_dur * 0.10
+    filters.append(
+        f"zoompan=z='if(between(in_time,{t_zoom:.1f},{t_zoom+0.5:.1f}),1.15,1)'"
+        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30"
+    )
+    # 25% 지점: 0.15초 jump cut (밝기 깜빡임으로 시뮬레이션)
+    t_cut = hook_dur + body_dur * 0.25
+    filters.append(
+        f"eq=brightness=0.08:enable='between(t,{t_cut:.2f},{t_cut+0.15:.2f})'"
+    )
+    # 60% 지점: flash (시각적 whoosh 대체)
+    t_whoosh = hook_dur + body_dur * 0.60
+    filters.append(
+        f"eq=brightness=0.12:enable='between(t,{t_whoosh:.2f},{t_whoosh+0.10:.2f})'"
+    )
+    return filters
+
+
+def build_pi_subtitle_emphasis(subs, total_dur, hook_dur=3.0):
+    """40% 지점 자막 키워드 강조 — ASS 자막 수정용 정보 반환."""
+    if not subs or total_dur <= hook_dur + 1:
+        return None
+    body_dur = total_dur - hook_dur
+    t_emphasis = hook_dur + body_dur * 0.40
+    # 해당 시점의 자막 찾기
+    for s in subs:
+        if s["start"] <= t_emphasis <= s["end"]:
+            return {"time": t_emphasis, "text": s["text"], "start": s["start"], "end": s["end"]}
+    return None
+
+
+def build_retention_booster_filters(total_dur, subs=None, hook_dur=3.0):
+    """Retention Booster FFmpeg 필터 리스트 생성."""
+    filters = []
+    if total_dur <= 5:
+        return filters
+    # 규칙 2: 2초마다 미세 zoom 변화 (hook 이후)
+    t = hook_dur + 2.0
+    zoom_toggle = True
+    while t < total_dur - 2:
+        z = 1.03 if zoom_toggle else 1.0
+        filters.append(
+            f"eq=brightness={'0.03' if not zoom_toggle else '-0.02'}:"
+            f"enable='between(t,{t:.1f},{t+0.3:.1f})'"
+        )
+        zoom_toggle = not zoom_toggle
+        t += 2.0
+    return filters
+
+
+def build_retention_subtitle_mods(subs, total_dur, hook_dur=3.0):
+    """Retention Booster 자막 수정 정보 반환: 첫 5초 밀도 증가 + Benefit 강조."""
+    mods = {"dense_first_5s": False, "benefit_emphasis": None}
+    if not subs:
+        return mods
+    # 규칙 1: 첫 5초 자막 밀도 — 첫 5초 내 자막이 2개 미만이면 분할 필요 표시
+    early_subs = [s for s in subs if s["start"] < hook_dur + 5.0 and s["start"] >= hook_dur]
+    if len(early_subs) < 2 and early_subs:
+        mods["dense_first_5s"] = True
+    # 규칙 3: 중간 구간 Benefit 강조 (40~70% 지점)
+    mid_start = total_dur * 0.4
+    mid_end = total_dur * 0.7
+    for s in subs:
+        if mid_start <= s["start"] <= mid_end:
+            mods["benefit_emphasis"] = {"text": s["text"], "start": s["start"], "end": s["end"]}
+            break
+    return mods
+
+
+def merge_tts_audio(hook_tts_path, body_tts_path, output_path, hook_dur=3.0):
+    """Hook TTS + Body TTS를 이어붙임. Hook TTS는 hook_dur에 맞게 padding/trim."""
+    tmp = _ensure_dir("shortform_hooks")
+    # Hook TTS를 정확히 hook_dur로 맞추기
+    hook_adjusted = tmp / "hook_tts_adjusted.mp3"
+    hook_audio_dur = get_audio_duration(hook_tts_path) if os.path.exists(hook_tts_path) else 0
+    if hook_audio_dur > 0:
+        if hook_audio_dur > hook_dur:
+            # trim
+            subprocess.run([
+                "ffmpeg", "-y", "-i", hook_tts_path, "-t", str(hook_dur),
+                "-c:a", "aac", "-b:a", "128k", str(hook_adjusted)
+            ], capture_output=True, text=True, timeout=15)
+        elif hook_audio_dur < hook_dur:
+            # pad with silence
+            pad = hook_dur - hook_audio_dur
+            subprocess.run([
+                "ffmpeg", "-y", "-i", hook_tts_path,
+                "-af", f"apad=pad_dur={pad:.2f}",
+                "-c:a", "aac", "-b:a", "128k", str(hook_adjusted)
+            ], capture_output=True, text=True, timeout=15)
+        else:
+            import shutil
+            shutil.copy2(hook_tts_path, str(hook_adjusted))
+    else:
+        # Hook TTS 없으면 무음 생성
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=mono",
+            "-t", str(hook_dur), "-c:a", "aac", "-b:a", "128k", str(hook_adjusted)
+        ], capture_output=True, text=True, timeout=15)
+
+    if not hook_adjusted.exists():
+        return body_tts_path  # fallback
+
+    # concat hook + body
+    concat_file = tmp / "tts_concat.txt"
+    with open(concat_file, "w") as f:
+        f.write(f"file '{hook_adjusted}'\n")
+        if body_tts_path and os.path.exists(body_tts_path):
+            f.write(f"file '{body_tts_path}'\n")
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-c:a", "aac", "-b:a", "128k", str(output_path)
+    ], capture_output=True, text=True, timeout=30)
+    return str(output_path) if os.path.exists(output_path) else body_tts_path
+
+
+def generate_hook_subtitles(hook_text, hook_dur=3.0, body_subs=None):
+    """Hook 자막 + Body 자막(offset 적용) 결합."""
+    # Hook 자막: 0초부터 hook_dur까지
+    hook_sub = [{"start": 0.0, "end": min(hook_dur, max(1.5, len(hook_text) * 0.15)), "text": hook_text}]
+    if not body_subs:
+        return hook_sub
+    # Body 자막: hook_dur 이후로 offset
+    merged = list(hook_sub)
+    for s in body_subs:
+        merged.append({
+            "start": round(s["start"] + hook_dur, 1),
+            "end": round(s["end"] + hook_dur, 1),
+            "text": s["text"]
+        })
+    return merged
+
+
+def assemble_hook_versions(clips, body_subs, body_tts_path, target_dur, crop_ratio="9:16",
+                           ass_path=None, bgm_path=None, bgm_volume=0.2,
+                           cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF",
+                           hook_clip_path=None, hooks=None, hook_dur=3.0,
+                           pattern_interrupt=False, retention_booster=False):
+    """Hook A/B/C 버전별 영상 생성. assemble_video()를 재사용."""
+    if not hooks or not clips:
+        return []
+    results = []
+    tmp = _ensure_dir("shortform_hooks")
+    # Hook 클립 준비 (3초 보장)
+    base_hook_path = hook_clip_path or clips[0]["path"]
+    hook_clip_ready, actual_hook_dur = ensure_hook_clip_duration(base_hook_path, hook_dur)
+
+    for hook_info in hooks:
+        ver_name = hook_info["name"]
+        hook_text = hook_info["hook_text"]
+        # 1. Hook TTS 생성 (기존 TTS 함수 재사용 시도)
+        hook_tts_out = tmp / f"hook_tts_{ver_name}.mp3"
+        hook_tts_generated = False
+        # ElevenLabs TTS 시도
+        if has_key("ELEVENLABS_API_KEY"):
+            try:
+                from elevenlabs_tts import generate_elevenlabs_tts
+                if generate_elevenlabs_tts(hook_text, str(hook_tts_out)):
+                    hook_tts_generated = True
+            except:
+                pass
+        # Clova TTS fallback
+        if not hook_tts_generated and has_key("CLOVA_TTS_CLIENT_ID"):
+            try:
+                result = generate_clova_tts(hook_text, str(hook_tts_out))
+                if result:
+                    hook_tts_generated = True
+            except:
+                pass
+
+        # 2. TTS 병합 (hook_tts + body_tts)
+        merged_tts = tmp / f"merged_tts_{ver_name}.mp3"
+        if hook_tts_generated and body_tts_path and os.path.exists(body_tts_path):
+            merge_tts_audio(str(hook_tts_out), body_tts_path, str(merged_tts), hook_dur)
+            final_tts = str(merged_tts) if merged_tts.exists() else body_tts_path
+        elif body_tts_path and os.path.exists(body_tts_path):
+            final_tts = body_tts_path
+        else:
+            final_tts = None
+
+        # 3. 자막 결합 (hook 자막 + body 자막 offset)
+        merged_subs = generate_hook_subtitles(hook_text, hook_dur, body_subs)
+
+        # 4. 클립 리스트: hook_clip + body_clips
+        hook_clip_dict = {
+            "name": f"hook_{ver_name}.mp4",
+            "path": hook_clip_ready,
+            "duration": f"0:{int(hook_dur):02d}",
+            "dur_sec": hook_dur,
+            "source": "hook",
+        }
+        version_clips = [hook_clip_dict] + list(clips)
+
+        # 5. ASS 자막 재생성 (offset 적용된 merged_subs로)
+        ver_ass_path = None
+        try:
+            fontpath = find_korean_font()
+            pn = st.session_state.get("_w_pname", "") or st.session_state.get("coupang_product", "")
+            ver_ass_path = generate_ass_subtitle(
+                merged_subs, fontpath, product_name=pn,
+                sub_size=60, sub_pos=2, sub_col="&H00FFFFFF",
+                sub_bold=True, sub_anim="없음", sub_margin=50
+            )
+        except:
+            ver_ass_path = None
+
+        # 6. assemble_video 호출
+        output, err = assemble_video(
+            version_clips, merged_subs, final_tts, target_dur,
+            crop_ratio=crop_ratio, ass_path=ver_ass_path,
+            bgm_path=bgm_path, bgm_volume=bgm_volume,
+            cta_text=cta_text, cta_position=cta_position,
+            cta_duration=cta_duration, cta_color=cta_color,
+            pattern_interrupt=pattern_interrupt,
+            retention_booster=retention_booster
+        )
+
+        # 7. 결과 이름 변경
+        if output and os.path.exists(output):
+            final_out = tmp / f"hook_version_{ver_name}.mp4"
+            import shutil
+            shutil.copy2(output, str(final_out))
+            results.append({
+                "name": ver_name,
+                "type": hook_info["type"],
+                "hook_text": hook_text,
+                "video_path": str(final_out),
+                "subtitle_path": ver_ass_path or "",
+                "audio_path": final_tts or "",
+            })
+        else:
+            results.append({
+                "name": ver_name,
+                "type": hook_info["type"],
+                "hook_text": hook_text,
+                "video_path": "",
+                "subtitle_path": "",
+                "audio_path": "",
+                "error": err or "조립 실패",
+            })
+    return results
+
+
+def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2, cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF", pattern_interrupt=False, retention_booster=False):
     """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 + BGM 믹싱 지원)"""
     tmp = _ensure_dir("shortform_build")
 
@@ -510,6 +840,9 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
             cta_fp_esc = cta_fontpath.replace("\\", "/").replace(":", "\\:")
             cta_t = cta_text.strip().replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
             cta_start = max(0, target_dur - cta_duration)
+            # Retention Booster ON 시 CTA 타이밍 최적화: 마지막 2초 전 노출
+            if retention_booster and target_dur > 5:
+                cta_start = max(0, target_dur - 2 - cta_duration)
             # 위치: 상단/하단/중앙하단 (자막과 충돌 방지)
             if cta_position == "상단":
                 cta_y = "100"
@@ -524,6 +857,47 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
                 f"box=1:boxcolor=black@0.5:boxborderw=12:"
                 f"enable='gte(t,{cta_start})'"
             )
+
+    # ── Pattern Interrupt 필터 ──
+    if pattern_interrupt:
+        pi_filters = build_pattern_interrupt_filters(target_dur, hook_dur=3.0)
+        vf_filters.extend(pi_filters)
+        # 40% 지점 자막 키워드 강조 (drawtext 추가)
+        pi_emphasis = build_pi_subtitle_emphasis(subs, target_dur, hook_dur=3.0)
+        if pi_emphasis:
+            emp_fontpath = find_korean_font()
+            if emp_fontpath:
+                emp_fp = emp_fontpath.replace("\\", "/").replace(":", "\\:")
+                emp_txt = pi_emphasis["text"].replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
+                vf_filters.append(
+                    f"drawtext=fontfile='{emp_fp}':text='{emp_txt}':"
+                    f"fontcolor=yellow:fontsize=64:borderw=4:"
+                    f"x=(w-text_w)/2:y=h*0.35:"
+                    f"shadowcolor=black:shadowx=3:shadowy=3:"
+                    f"enable='between(t,{pi_emphasis['start']:.1f},{pi_emphasis['end']:.1f})'"
+                )
+
+    # ── Retention Booster 필터 ──
+    if retention_booster:
+        rb_filters = build_retention_booster_filters(target_dur, hook_dur=3.0)
+        vf_filters.extend(rb_filters)
+        # Benefit 강조 (drawtext)
+        rb_mods = build_retention_subtitle_mods(subs, target_dur, hook_dur=3.0)
+        if rb_mods.get("benefit_emphasis"):
+            be = rb_mods["benefit_emphasis"]
+            be_fontpath = find_korean_font()
+            if be_fontpath:
+                be_fp = be_fontpath.replace("\\", "/").replace(":", "\\:")
+                be_txt = be["text"].replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
+                vf_filters.append(
+                    f"drawtext=fontfile='{be_fp}':text='{be_txt}':"
+                    f"fontcolor=#FFD700:fontsize=72:borderw=5:"
+                    f"x=(w-text_w)/2:y=h*0.30:"
+                    f"shadowcolor=black:shadowx=4:shadowy=4:"
+                    f"enable='between(t,{be['start']:.1f},{be['end']:.1f})'"
+                )
+        # CTA 타이밍 최적화: 마지막 2초 전으로 조정
+        # (이미 cta_start가 위에서 계산되었으므로 여기서는 별도 처리 불필요)
 
     final_out = tmp / "final.mp4"
     vf_str = ",".join(vf_filters) if vf_filters else "null"
@@ -1696,6 +2070,48 @@ def render_step3():
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
 
+    # ═══════ 🎯 조회수 최적화 패널 ═══════
+    st.markdown('<div class="card"><div class="card-label">OPTIMIZE</div><h3>🎯 조회수 최적화</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">조회수와 완시율을 높이기 위한 자동 최적화 옵션입니다. 영상 조립 시 자동 적용됩니다.</div>', unsafe_allow_html=True)
+
+    opt_c1, opt_c2, opt_c3 = st.columns(3)
+    with opt_c1:
+        st.session_state.hook_test_enabled = st.checkbox(
+            "🪝 Hook A/B 테스트",
+            value=st.session_state.hook_test_enabled,
+            help="같은 제품으로 첫 3초만 다른 영상 2~3개를 자동 생성합니다.",
+            key="opt_hook_test"
+        )
+        if st.session_state.hook_test_enabled:
+            if not st.session_state.clips:
+                st.markdown('<span class="badge badge-dark">⚠️ 클립 필요</span>', unsafe_allow_html=True)
+                st.caption("STEP 1에서 클립을 먼저 추가하세요")
+            else:
+                st.session_state.hook_version_count = st.radio(
+                    "버전 수", [2, 3], horizontal=True, key="opt_hook_count",
+                    index=0 if st.session_state.hook_version_count == 2 else 1
+                )
+                st.caption("A: 문제 제시 / B: 놀람 / C: 손해 회피")
+    with opt_c2:
+        st.session_state.pattern_interrupt_enabled = st.checkbox(
+            "⚡ Pattern Interrupt",
+            value=st.session_state.pattern_interrupt_enabled,
+            help="영상 중간에 zoom, jump cut, 키워드 강조 등 시각 변화를 자동 삽입합니다.",
+            key="opt_pattern_interrupt"
+        )
+        if st.session_state.pattern_interrupt_enabled:
+            st.caption("10%: zoom / 25%: cut / 40%: 강조 / 60%: flash")
+    with opt_c3:
+        st.session_state.retention_booster_enabled = st.checkbox(
+            "📈 Retention Booster",
+            value=st.session_state.retention_booster_enabled,
+            help="완시율 최적화: 첫 5초 자막 밀도 증가, 2초 시각 변화, Benefit 강조, CTA 타이밍 최적화",
+            key="opt_retention_booster"
+        )
+        if st.session_state.retention_booster_enabled:
+            st.caption("자막 밀도 + 시각 변화 + Benefit 강조 + CTA 최적화")
+    st.markdown("---")
+
     # ── AI 제목 9개 생성 (쿠팡 전용) ──
     if st.session_state.coupang_product:
         pname = st.session_state.coupang_product
@@ -2154,10 +2570,45 @@ def render_step3():
     st.markdown('<div class="card"><div class="card-label">ASSEMBLE</div><h3>🎬 최종 영상 조립</h3></div>', unsafe_allow_html=True)
 
     has_clips = bool(st.session_state.clips)
+    _hook_on = st.session_state.hook_test_enabled and has_clips
+    _pi_on = st.session_state.pattern_interrupt_enabled
+    _rb_on = st.session_state.retention_booster_enabled
+
     if not has_clips:
         st.info("STEP 1에서 클립을 먼저 추가해주세요")
     else:
-        st.markdown(f"**{len(st.session_state.clips)}개 클립** · 목표 {target_dur}초 · {'TTS ✅' if st.session_state.tts_done else 'TTS 없음'}")
+        _opt_tags = []
+        if _hook_on: _opt_tags.append("Hook A/B")
+        if _pi_on: _opt_tags.append("PI")
+        if _rb_on: _opt_tags.append("RB")
+        _opt_str = " + ".join(_opt_tags) if _opt_tags else "기본"
+        st.markdown(f"**{len(st.session_state.clips)}개 클립** · 목표 {target_dur}초 · {'TTS ✅' if st.session_state.tts_done else 'TTS 없음'} · 최적화: {_opt_str}")
+
+        # Hook ON 시 Hook 텍스트 미리 생성
+        if _hook_on:
+            _hook_count = st.session_state.hook_version_count
+            _pname = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or "제품"
+            _pcat = st.session_state.coupang_category or "기타"
+            _cmode = st.session_state.content_mode or "클릭유도형"
+
+            if st.button("🪝 Hook 텍스트 생성", key="gen_hooks"):
+                with st.spinner("Hook A/B/C 텍스트 생성 중..."):
+                    hooks = generate_hooks(_pname, _pcat, _cmode, _hook_count)
+                    st.session_state.hook_versions = hooks
+                    st.success(f"✅ {len(hooks)}개 Hook 생성 완료!")
+                    st.rerun()
+
+            if st.session_state.hook_versions:
+                st.markdown("**🪝 Hook 텍스트 (수정 가능)**")
+                for hi, hv in enumerate(st.session_state.hook_versions):
+                    _hcol1, _hcol2 = st.columns([1, 5])
+                    with _hcol1:
+                        _type_badge = "badge-blue" if hv["name"] == "A" else ("badge-green" if hv["name"] == "B" else "badge-dark")
+                        st.markdown(f'<span class="badge {_type_badge}">버전 {hv["name"]}</span>', unsafe_allow_html=True)
+                        st.caption(hv["type"])
+                    with _hcol2:
+                        new_text = st.text_input(f"Hook {hv['name']}", value=hv["hook_text"], key=f"hook_edit_{hi}", label_visibility="collapsed")
+                        st.session_state.hook_versions[hi]["hook_text"] = new_text
 
         if st.button("⚡ 영상 조립 시작", type="primary"):
             prog = st.progress(0)
@@ -2170,17 +2621,10 @@ def render_step3():
             if not valid:
                 st.error("❌ 다운로드된 클립 파일이 없습니다. 영상을 먼저 다운로드해주세요.")
             else:
-                stat.text(f"✂️ {len(valid)}개 클립 조립 중...")
-                prog.progress(30)
-
                 tts_check = os.path.join(TMPDIR, "tts_output.mp3")
                 tts_path = tts_check if st.session_state.tts_done and os.path.exists(tts_check) else None
                 subs = st.session_state.sample_subs if st.session_state.subtitle_done else []
                 ratio = "9:16" if "9:16" in crop_ratio else "1:1"
-
-                stat.text("🎬 FFmpeg 영상 합성 중... (최대 2분)")
-                prog.progress(50)
-
                 ass_file = st.session_state.get("ass_path", "")
                 bgm_file = st.session_state.get("selected_bgm", "")
                 bgm_vol = st.session_state.get("bgm_volume", 0.2)
@@ -2188,20 +2632,59 @@ def render_step3():
                 cta_p = st.session_state.get("cta_position", "하단")
                 cta_d = st.session_state.get("cta_duration", 3)
                 cta_clr = st.session_state.get("cta_color", "#FFFFFF")
-                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio,
-                                                  ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
-                                                  cta_text=cta_t, cta_position=cta_p,
-                                                  cta_duration=cta_d, cta_color=cta_clr)
 
-                if output and os.path.exists(output):
+                if _hook_on and st.session_state.hook_versions:
+                    # ═══ Hook A/B 테스트 모드: 버전별 영상 생성 ═══
+                    stat.text(f"🪝 Hook A/B 테스트: {len(st.session_state.hook_versions)}개 버전 생성 중...")
+                    prog.progress(30)
+
+                    hook_results = assemble_hook_versions(
+                        valid, subs, tts_path, target_dur, crop_ratio=ratio,
+                        ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
+                        cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
+                        hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
+                        pattern_interrupt=_pi_on, retention_booster=_rb_on
+                    )
+                    st.session_state.hook_versions = hook_results
                     prog.progress(100)
                     stat.text("✅ 완료!")
-                    st.session_state.output_path = output
-                    st.success("🎉 영상 조립 완료! STEP 4에서 다운로드하세요.")
-                    st.video(output)
+
+                    success_count = sum(1 for h in hook_results if h.get("video_path"))
+                    if success_count > 0:
+                        st.success(f"🎉 Hook A/B 테스트 완료! {success_count}개 버전 생성 → STEP 4에서 비교/다운로드하세요.")
+                        # 첫 번째 성공 버전을 output_path에도 저장 (하위 호환)
+                        first_ok = next((h for h in hook_results if h.get("video_path")), None)
+                        if first_ok:
+                            st.session_state.output_path = first_ok["video_path"]
+                    else:
+                        st.error("❌ 모든 Hook 버전 조립 실패")
+                        for h in hook_results:
+                            if h.get("error"):
+                                st.warning(f"버전 {h['name']}: {h['error']}")
                 else:
-                    prog.progress(100)
-                    st.error(f"❌ 영상 조립 실패: {err_msg or 'FFmpeg 오류'}")
+                    # ═══ 기존 단일 영상 모드 (Hook OFF) — 100% 유지 ═══
+                    stat.text(f"✂️ {len(valid)}개 클립 조립 중...")
+                    prog.progress(30)
+
+                    stat.text("🎬 FFmpeg 영상 합성 중... (최대 2분)")
+                    prog.progress(50)
+
+                    output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio,
+                                                      ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
+                                                      cta_text=cta_t, cta_position=cta_p,
+                                                      cta_duration=cta_d, cta_color=cta_clr,
+                                                      pattern_interrupt=_pi_on,
+                                                      retention_booster=_rb_on)
+
+                    if output and os.path.exists(output):
+                        prog.progress(100)
+                        stat.text("✅ 완료!")
+                        st.session_state.output_path = output
+                        st.success("🎉 영상 조립 완료! STEP 4에서 다운로드하세요.")
+                        st.video(output)
+                    else:
+                        prog.progress(100)
+                        st.error(f"❌ 영상 조립 실패: {err_msg or 'FFmpeg 오류'}")
 
     _render_nav_buttons()
 
@@ -2401,6 +2884,41 @@ def render_step4():
     if aff_link:
         st.markdown(f'<div class="info-box">🔗 쿠팡 파트너스 링크가 설명란에 자동 포함되었습니다.</div>', unsafe_allow_html=True)
 
+    # ═══════ Hook A/B 테스트 결과 미리보기 ═══════
+    _hook_versions = st.session_state.get("hook_versions", [])
+    _hook_has_videos = any(h.get("video_path") and os.path.exists(h.get("video_path", "")) for h in _hook_versions)
+
+    if st.session_state.hook_test_enabled and _hook_has_videos:
+        st.markdown("### 🪝 Hook A/B 테스트 결과")
+        st.markdown('<div class="info-box">같은 제품, 첫 3초만 다른 영상입니다. 성과를 비교해보세요!</div>', unsafe_allow_html=True)
+
+        _hook_cols = st.columns(len(_hook_versions))
+        for hi, hv in enumerate(_hook_versions):
+            with _hook_cols[hi]:
+                _ver_badge = "badge-blue" if hv["name"] == "A" else ("badge-green" if hv["name"] == "B" else "badge-dark")
+                st.markdown(f'<span class="badge {_ver_badge}">버전 {hv["name"]}</span> <strong>{hv["type"]}</strong>', unsafe_allow_html=True)
+                st.caption(f'"{hv["hook_text"]}"')
+
+                if hv.get("video_path") and os.path.exists(hv["video_path"]):
+                    st.video(hv["video_path"])
+                    # 플랫폼별 다운로드
+                    for platform, p_badge in [("유튜브", "badge-dark"), ("인스타", "badge-blue"), ("틱톡", "badge-green")]:
+                        with open(hv["video_path"], "rb") as f:
+                            st.download_button(
+                                f"⬇️ {platform}",
+                                data=f.read(),
+                                file_name=f"{pn}_hook_{hv['name']}_{platform}.mp4",
+                                mime="video/mp4",
+                                use_container_width=True,
+                                key=f"dl_hook_{hv['name']}_{platform}"
+                            )
+                elif hv.get("error"):
+                    st.error(f"❌ {hv['error']}")
+                else:
+                    st.warning("영상 없음")
+        st.markdown("---")
+
+    # ═══════ 플랫폼별 다운로드 (기존 단일 영상) ═══════
     st.markdown("### 📥 플랫폼별 다운로드")
     video_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
 
