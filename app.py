@@ -2,6 +2,7 @@ import streamlit as st
 import os, json, subprocess, tempfile, time, re, requests, glob as globmod, random
 from pathlib import Path
 from bs4 import BeautifulSoup
+from PIL import Image, ImageDraw, ImageFont
 
 # ── 크로스 플랫폼 임시 디렉토리 ──────────────────────────────────────
 TMPDIR = tempfile.gettempdir()
@@ -112,6 +113,7 @@ defaults = {
     "generated_titles":[], "selected_title":"",
     "sub_animation":"없음", "sub_margin":50, "ass_path":"",
     "bgm_results":[], "selected_bgm":"", "bgm_volume":0.2,
+    "thumbnail_paths":[],
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -588,6 +590,178 @@ def download_bgm(url, dest_path):
     except:
         pass
     return False
+
+# ── 썸네일 생성 헬퍼 ─────────────────────────────────────────────
+def _load_pillow_font(size=60):
+    """Pillow용 한글 폰트 로드 (실패 시 기본 폰트)"""
+    fontpath = find_korean_font()
+    if fontpath:
+        try:
+            return ImageFont.truetype(fontpath, size)
+        except:
+            pass
+    for fb in ["arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+        try:
+            return ImageFont.truetype(fb, size)
+        except:
+            continue
+    try:
+        return ImageFont.load_default(size)
+    except TypeError:
+        return ImageFont.load_default()
+
+def _draw_outlined_text(draw, pos, text, font, fill=(255,255,255), outline=(0,0,0), width=2):
+    """텍스트에 외곽선 효과"""
+    x, y = pos
+    for dx, dy in [(-width,0),(width,0),(0,-width),(0,width),
+                   (-width,-width),(width,-width),(-width,width),(width,width)]:
+        draw.multiline_text((x+dx, y+dy), text, fill=outline, font=font, align="center")
+    draw.multiline_text((x, y), text, fill=fill, font=font, align="center")
+
+def _get_first_product_image():
+    """제품 이미지 로컬 경로 반환 (업로드 > 추출 > None)"""
+    for p in st.session_state.get("uploaded_images", []):
+        if os.path.exists(p):
+            return p
+    prod_imgs = st.session_state.get("product_images", [])
+    if prod_imgs:
+        tmp = _ensure_dir("thumb_prod_img")
+        dest = tmp / "prod_thumb.jpg"
+        if dest.exists() and os.path.getsize(str(dest)) > 500:
+            return str(dest)
+        url = prod_imgs[0].get("url", "")
+        if url and download_image(url, str(dest)):
+            return str(dest)
+    return None
+
+def generate_thumbnail(template, resolution, main_text, sub_text="", product_img_path=None):
+    """Pillow로 썸네일 생성 (임팩트형/가격강조형/문제해결형)"""
+    try:
+        w, h = resolution
+        tmp = _ensure_dir("shortform_thumbnails")
+        tmpl_tag = {"임팩트형":"impact","가격강조형":"price","문제해결형":"solution"}.get(template,"thumb")
+        out_path = tmp / f"thumb_{tmpl_tag}_{w}x{h}.png"
+
+        font_main = _load_pillow_font(int(min(w,h)*0.08))
+        font_sub = _load_pillow_font(int(min(w,h)*0.045))
+        font_badge = _load_pillow_font(int(min(w,h)*0.035))
+
+        # 긴 텍스트 자동 줄바꿈 (14자 기준)
+        if len(main_text) > 14:
+            mid = len(main_text) // 2
+            sp = main_text.rfind(" ", max(0, mid-5), mid+5)
+            if sp > 2:
+                main_text = main_text[:sp] + "\n" + main_text[sp+1:]
+            else:
+                main_text = main_text[:mid] + "\n" + main_text[mid:]
+
+        # 제품 이미지 로드
+        prod = None
+        if product_img_path and os.path.exists(product_img_path):
+            try:
+                prod = Image.open(product_img_path).convert("RGBA")
+            except:
+                pass
+
+        # ── 임팩트형: 어두운 배경 + 제품 중앙 + 큰 텍스트 ──
+        if template == "임팩트형":
+            img = Image.new("RGB", (w, h), (20, 20, 35))
+            draw = ImageDraw.Draw(img)
+            for y in range(h):
+                rv = int(15+20*(y/h)); gv = int(15+15*(y/h)); bv = int(30+30*(y/h))
+                draw.line([(0,y),(w,y)], fill=(rv,gv,bv))
+
+            if prod:
+                sz = int(min(w,h)*0.5)
+                prod.thumbnail((sz,sz), Image.LANCZOS)
+                img.paste(prod, ((w-prod.width)//2, int(h*0.15)), prod)
+                draw = ImageDraw.Draw(img)
+
+            bbox = draw.multiline_textbbox((0,0), main_text, font=font_main, align="center")
+            tw, th_t = bbox[2]-bbox[0], bbox[3]-bbox[1]
+            tx, ty = (w-tw)//2, int(h*0.72)
+            _draw_outlined_text(draw, (tx,ty), main_text, font_main)
+
+            if sub_text:
+                sb = draw.multiline_textbbox((0,0), sub_text, font=font_sub, align="center")
+                draw.multiline_text(((w-(sb[2]-sb[0]))//2, ty+th_t+12), sub_text,
+                                    fill=(200,200,210), font=font_sub, align="center")
+            try:
+                draw.rounded_rectangle([int(w*0.03),int(h*0.04),int(w*0.20),int(h*0.11)], radius=10, fill=(244,67,54))
+            except:
+                draw.rectangle([int(w*0.03),int(h*0.04),int(w*0.20),int(h*0.11)], fill=(244,67,54))
+            draw.text((int(w*0.05),int(h*0.055)), "BEST PICK", fill=(255,255,255), font=font_badge)
+
+        # ── 가격강조형: 주황 배경 + 가격 크게 ──
+        elif template == "가격강조형":
+            img = Image.new("RGB", (w, h), (255,107,53))
+            draw = ImageDraw.Draw(img)
+            for y in range(h):
+                gv = max(0, int(107-50*(y/h))); bv = max(0, int(53-30*(y/h)))
+                draw.line([(0,y),(w,y)], fill=(255,gv,bv))
+
+            if prod:
+                sz = int(min(w,h)*0.45)
+                prod.thumbnail((sz,sz), Image.LANCZOS)
+                img.paste(prod, (int(w*0.05),(h-prod.height)//2), prod)
+                draw = ImageDraw.Draw(img)
+
+            font_price = _load_pillow_font(int(min(w,h)*0.11))
+            bbox = draw.multiline_textbbox((0,0), main_text, font=font_price, align="center")
+            tw, th_t = bbox[2]-bbox[0], bbox[3]-bbox[1]
+            tx = max(int(w*0.50), w-tw-int(w*0.05))
+            ty = int(h*0.30)
+            _draw_outlined_text(draw, (tx,ty), main_text, font_price, outline=(100,0,0))
+
+            if sub_text:
+                sb = draw.multiline_textbbox((0,0), sub_text, font=font_sub, align="center")
+                stw = sb[2]-sb[0]
+                draw.multiline_text((max(int(w*0.50),w-stw-int(w*0.05)), ty+th_t+15),
+                                    sub_text, fill=(255,240,220), font=font_sub, align="center")
+            try:
+                draw.rounded_rectangle([int(w*0.65),int(h*0.04),int(w*0.97),int(h*0.12)], radius=10, fill=(0,0,0))
+            except:
+                draw.rectangle([int(w*0.65),int(h*0.04),int(w*0.97),int(h*0.12)], fill=(0,0,0))
+            draw.text((int(w*0.67),int(h*0.055)), "BEST DEAL", fill=(255,200,0), font=font_badge)
+
+        # ── 문제해결형: Before/After 분할 ──
+        elif template == "문제해결형":
+            img = Image.new("RGB", (w, h), (240,245,240))
+            draw = ImageDraw.Draw(img)
+            for x in range(w//2):
+                c = int(50+30*(x/(w//2)))
+                draw.line([(x,0),(x,h)], fill=(c,c,c+5))
+            for x in range(w//2, w):
+                ratio = (x-w//2)/(w//2)
+                draw.line([(x,0),(x,h)], fill=(int(220+30*ratio),245,int(225+25*ratio)))
+            draw.rectangle([w//2-2,0,w//2+2,h], fill=(255,200,0))
+
+            if prod:
+                sz = int(min(w,h)*0.4)
+                prod.thumbnail((sz,sz), Image.LANCZOS)
+                px = int(w*0.55)+(int(w*0.4)-prod.width)//2
+                img.paste(prod, (px,(h-prod.height)//2), prod)
+                draw = ImageDraw.Draw(img)
+
+            font_label = _load_pillow_font(int(min(w,h)*0.05))
+            draw.text((int(w*0.08),int(h*0.08)), "BEFORE", fill=(180,180,180), font=font_label)
+            draw.text((int(w*0.58),int(h*0.08)), "AFTER", fill=(0,150,80), font=font_label)
+
+            draw.rectangle([0,int(h*0.75),w,h], fill=(20,20,25))
+            bbox = draw.multiline_textbbox((0,0), main_text, font=font_main, align="center")
+            tw, th_t = bbox[2]-bbox[0], bbox[3]-bbox[1]
+            tx, ty = (w-tw)//2, int(h*0.78)
+            _draw_outlined_text(draw, (tx,ty), main_text, font_main)
+
+            if sub_text:
+                sb = draw.multiline_textbbox((0,0), sub_text, font=font_sub, align="center")
+                draw.multiline_text(((w-(sb[2]-sb[0]))//2, ty+th_t+8), sub_text,
+                                    fill=(180,220,180), font=font_sub, align="center")
+
+        img.save(str(out_path), "PNG")
+        return str(out_path) if out_path.exists() else None
+    except Exception:
+        return None
 
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
@@ -1583,6 +1757,66 @@ with tab_dl:
                     st.download_button("⬇️ 다운로드", data=f.read(), file_name=fn, mime="video/mp4", use_container_width=True, key=f"dl_{name}")
             else:
                 st.button("⬇️ 다운로드", disabled=True, use_container_width=True, key=f"dld_{name}")
+
+    # ── 썸네일 자동 생성 ──
+    st.markdown("---")
+    st.markdown('<div class="card"><div class="card-label">THUMBNAIL</div><h3>🖼️ 썸네일 반자동 생성</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">3가지 템플릿 + 2가지 해상도로 썸네일을 자동 생성합니다. 제품 이미지가 있으면 자동으로 활용됩니다.</div>', unsafe_allow_html=True)
+
+    th_c1, th_c2 = st.columns(2)
+    with th_c1:
+        thumb_template = st.radio("템플릿", ["임팩트형", "가격강조형", "문제해결형"], horizontal=True, key="thumb_tmpl",
+                                  help="임팩트형: 어두운 배경+큰 텍스트 / 가격강조형: 주황 배경+가격 강조 / 문제해결형: Before→After")
+    with th_c2:
+        thumb_res = st.radio("해상도", ["유튜브 (1280x720)", "인스타 (1080x1080)", "둘 다"], horizontal=True, key="thumb_res")
+
+    # 기본 텍스트: 생성된 제목 → 제품명 순서로 자동 세팅
+    default_main = ""
+    if st.session_state.selected_title:
+        default_main = st.session_state.selected_title
+    elif st.session_state.generated_titles:
+        default_main = st.session_state.generated_titles[0].get("text", "")
+    elif pn and pn != "제품":
+        default_main = pn
+
+    thumb_main = st.text_input("메인 텍스트", value=default_main, placeholder="예: 이거 안 쓰면 손해!", key="thumb_main")
+    thumb_sub = st.text_input("서브 텍스트 (선택)", placeholder="예: 쿠팡 최저가 확인하기", key="thumb_sub")
+
+    if st.button("🖼️ 썸네일 생성", key="gen_thumb"):
+        if not thumb_main:
+            st.warning("메인 텍스트를 입력해주세요.")
+        else:
+            with st.spinner("썸네일 생성 중..."):
+                prod_img = _get_first_product_image()
+                resolutions = []
+                if "유튜브" in thumb_res or "둘 다" in thumb_res:
+                    resolutions.append(("유튜브", (1280, 720)))
+                if "인스타" in thumb_res or "둘 다" in thumb_res:
+                    resolutions.append(("인스타", (1080, 1080)))
+
+                generated = []
+                for label, res in resolutions:
+                    result = generate_thumbnail(thumb_template, res, thumb_main, thumb_sub, prod_img)
+                    if result:
+                        generated.append({"label": label, "w": res[0], "h": res[1], "path": result})
+
+                if generated:
+                    st.session_state.thumbnail_paths = generated
+                    st.success(f"✅ 썸네일 {len(generated)}개 생성 완료!")
+                else:
+                    st.error("썸네일 생성 실패 — Pillow 라이브러리를 확인해주세요.")
+
+    if st.session_state.thumbnail_paths:
+        thumb_cols = st.columns(len(st.session_state.thumbnail_paths))
+        for i, td in enumerate(st.session_state.thumbnail_paths):
+            with thumb_cols[i]:
+                st.markdown(f'<span class="badge badge-blue">{td["label"]} ({td["w"]}x{td["h"]})</span>', unsafe_allow_html=True)
+                if os.path.exists(td["path"]):
+                    st.image(td["path"], use_container_width=True)
+                    with open(td["path"], "rb") as f:
+                        st.download_button(f"⬇️ {td['label']} 다운로드", data=f.read(),
+                                           file_name=f"thumbnail_{td['label']}_{td['w']}x{td['h']}.png",
+                                           mime="image/png", use_container_width=True, key=f"dl_thumb_{i}")
 
     st.markdown("---")
     with st.expander("🔑 필요한 API 키 안내"):
