@@ -593,14 +593,17 @@ def download_bgm(url, dest_path):
 
 # ── 썸네일 생성 헬퍼 ─────────────────────────────────────────────
 def _load_pillow_font(size=60):
-    """Pillow용 한글 폰트 로드 (실패 시 기본 폰트)"""
+    """Pillow용 한글 폰트 로드 (실패 시 기본 폰트, 한글 깨짐 경고)"""
     fontpath = find_korean_font()
     if fontpath:
         try:
             return ImageFont.truetype(fontpath, size)
         except:
             pass
-    for fb in ["arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]:
+    # 한글 폰트 없음 → 대체 폰트 시도 (한글 글리프 없을 수 있음)
+    for fb in ["arial.ttf", "Arial.ttf",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]:
         try:
             return ImageFont.truetype(fb, size)
         except:
@@ -635,12 +638,15 @@ def _get_first_product_image():
     return None
 
 def generate_thumbnail(template, resolution, main_text, sub_text="", product_img_path=None):
-    """Pillow로 썸네일 생성 (임팩트형/가격강조형/문제해결형)"""
+    """Pillow로 썸네일 생성 (임팩트형/가격강조형/문제해결형). 한글 폰트 없으면 경고 반환."""
     try:
         w, h = resolution
         tmp = _ensure_dir("shortform_thumbnails")
         tmpl_tag = {"임팩트형":"impact","가격강조형":"price","문제해결형":"solution"}.get(template,"thumb")
         out_path = tmp / f"thumb_{tmpl_tag}_{w}x{h}.png"
+
+        # 한글 폰트 가용성 사전 체크
+        _korean_font_ok = find_korean_font() is not None
 
         font_main = _load_pillow_font(int(min(w,h)*0.08))
         font_sub = _load_pillow_font(int(min(w,h)*0.045))
@@ -1803,6 +1809,8 @@ with tab_dl:
                 if generated:
                     st.session_state.thumbnail_paths = generated
                     st.success(f"✅ 썸네일 {len(generated)}개 생성 완료!")
+                    if not find_korean_font():
+                        st.markdown('<div class="warn-box">⚠️ 한글 폰트 미감지: 한글이 깨져 보일 수 있습니다. Streamlit Cloud의 경우 packages.txt에 fonts-nanum이 필요합니다.</div>', unsafe_allow_html=True)
                 else:
                     st.error("썸네일 생성 실패 — Pillow 라이브러리를 확인해주세요.")
 
