@@ -108,10 +108,25 @@ defaults = {
     "product_images":[], "uploaded_images":[],
     "content_mode":"클릭유도형", "coupang_affiliate_link":"",
     "hook_suggestions":[], "selected_hook":"",
+    "hashtag_list":[], "hashtag_selections":{},
+    "generated_titles":[], "selected_title":"",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# ── 카테고리별 해시태그 DB ─────────────────────────────────────────
+CATEGORY_HASHTAGS = {
+    "생활용품": ["#생활꿀템","#주방용품","#집꾸미기","#살림템","#주부템","#홈리빙","#정리정돈","#생활용품추천","#가성비템","#인테리어소품","#청소꿀팁","#다이소추천","#집콕템","#생활해킹","#편리템","#수납정리"],
+    "뷰티/화장품": ["#뷰티템","#스킨케어","#화장품추천","#뷰티하울","#피부관리","#메이크업","#데일리뷰티","#뷰티리뷰","#겟레디윗미","#파데추천","#립스틱추천","#올리브영추천","#뷰티꿀템","#기초화장품","#톤업크림","#선크림추천"],
+    "전자기기": ["#전자제품","#가전추천","#스마트홈","#테크템","#갓성비","#IT리뷰","#가젯","#스마트기기","#언박싱","#전자기기추천","#가전제품","#블루투스","#이어폰추천","#충전기추천","#디지털","#테크리뷰"],
+    "패션/의류": ["#패션추천","#오오티디","#데일리룩","#코디추천","#패션하울","#쇼핑하울","#옷추천","#스타일링","#패션꿀템","#가성비패션","#트렌드","#봄코디","#여름코디","#가을코디","#겨울코디","#데일리패션"],
+    "식품": ["#맛있템","#식품추천","#간식추천","#건강식품","#푸드하울","#먹방","#맛집추천","#다이어트식품","#간편식","#밀키트","#식단관리","#영양제추천","#단백질","#헬시푸드","#제로칼로리","#간식하울"],
+    "건강/헬스": ["#건강템","#헬스장","#운동기구","#홈트레이닝","#다이어트","#건강관리","#보충제","#프로틴","#요가","#필라테스","#헬스용품","#건강식품","#비타민","#체중관리","#근력운동","#홈트"],
+    "유아/키즈": ["#육아템","#아기용품","#육아필수템","#맘스템","#아이템","#유아용품","#출산준비","#베이비","#키즈템","#아기옷","#이유식","#장난감추천","#육아꿀팁","#초등준비물","#아기간식","#신생아용품"],
+    "기타": ["#추천템","#꿀템","#갓성비","#리뷰","#솔직리뷰","#하울","#쇼핑","#언박싱","#쿠팡발견","#트렌드","#인기템","#핫딜","#가성비","#신상품","#필수템","#베스트셀러"],
+}
+COMMON_HASHTAGS = ["#쿠팡","#쿠팡파트너스","#추천템","#구매링크","#숏폼"]
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────
 def get_api_key(name):
@@ -533,22 +548,66 @@ with tab_coupang:
 
         st.markdown("---")
 
-        # 2. 후킹 제목 5개
-        st.markdown("#### 2️⃣ 후킹 제목 자동 생성")
-        if st.button("✨ AI 제목 5개 생성", key="gen_titles"):
-            with st.spinner("후킹 제목 생성 중..."):
+        # 2. 후킹 제목 9개 (3유형 × 3개)
+        st.markdown("#### 2️⃣ AI 제목 자동 생성 (9개)")
+        st.markdown('<div class="info-box">3가지 유형 × 3개씩 = 총 9개 제목을 AI가 생성합니다. 📌 버튼으로 원하는 제목을 바로 적용하세요.</div>', unsafe_allow_html=True)
+
+        if st.button("✨ AI 제목 9개 생성", key="gen_titles"):
+            with st.spinner("3가지 유형 × 3개 제목 생성 중..."):
                 cmode = st.session_state.content_mode
+                mode_emphasis = {
+                    "클릭유도형": "궁금증 유발형을 특히 강렬하게 만들어줘.",
+                    "구매전환형": "혜택강조형을 특히 매력적으로 만들어줘.",
+                    "리뷰형": "문제해결형을 실제 사용 경험 중심으로 만들어줘.",
+                    "비교형": "궁금증 유발형에 비교 요소를 넣어줘.",
+                    "문제해결형": "문제해결형을 가장 공감가게 만들어줘.",
+                    "바이럴형": "궁금증 유발형을 밈/유머 스타일로 만들어줘.",
+                }
                 result = call_claude(
-                    "숏폼 마케팅 전문가. 제목만 출력. 번호 매겨서.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품의 숏폼 영상 후킹 제목 5개를 만들어줘.\n조건:\n- '{cmode}' 스타일에 맞게 작성\n- 15자 이내\n- 이모지 1-2개 포함\n- 유튜브 쇼츠/릴스에 최적화"
+                    "숏폼 제목 전문가. 정확히 아래 형식으로 출력. 제목만 출력.",
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n{mode_emphasis.get(cmode, '')}\n\n아래 3가지 유형별로 각 3개씩 총 9개의 숏폼 제목을 만들어줘.\n\n[궁금증유발]\n- '이거 모르면 손해', '진짜 이게 돼?' 같은 호기심 자극 스타일\n[문제해결]\n- '이것 때문에 고민 끝', '해결한 제품' 같은 솔루션 제시 스타일\n[혜택강조]\n- '이 가격에?', '가성비 끝판왕' 같은 가격/혜택 강조 스타일\n\n조건:\n- 각 제목 15자 이내\n- 이모지 1개 포함\n- 유형 라벨 없이, 3줄 빈 줄로 유형 구분\n- 총 9줄 출력 (유형당 3줄)"
                 )
                 if result:
-                    st.session_state.coupang_titles = result
+                    lines = [l.strip() for l in result.strip().split("\n") if l.strip()]
+                    titles = []
+                    type_names = ["궁금증유발", "문제해결", "혜택강조"]
+                    type_idx = 0
+                    count = 0
+                    for l in lines:
+                        clean = l.lstrip("0123456789.-) ·•")
+                        if clean.startswith("[") or clean.startswith("【"):
+                            continue
+                        if clean:
+                            ttype = type_names[min(type_idx, 2)]
+                            titles.append({"text": clean, "type": ttype})
+                            count += 1
+                            if count % 3 == 0:
+                                type_idx += 1
+                    st.session_state.generated_titles = titles[:9]
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
 
-        if st.session_state.coupang_titles:
-            st.code(st.session_state.coupang_titles, language=None)
+        if st.session_state.generated_titles:
+            type_badges = {"궁금증유발": "badge-red", "문제해결": "badge-blue", "혜택강조": "badge-green"}
+            current_type = ""
+            for ti, title_item in enumerate(st.session_state.generated_titles):
+                ttype = title_item.get("type", "")
+                if ttype != current_type:
+                    current_type = ttype
+                    badge_cls = type_badges.get(ttype, "badge-gray")
+                    st.markdown(f'<span class="badge {badge_cls}" style="margin-top:8px;">{ttype}</span>', unsafe_allow_html=True)
+                tc1, tc2 = st.columns([5, 1])
+                with tc1:
+                    st.markdown(f"&nbsp;&nbsp;`{title_item['text']}`")
+                with tc2:
+                    if st.button("📌 적용", key=f"title_{ti}", use_container_width=True):
+                        st.session_state.selected_title = title_item["text"]
+                        st.session_state.coupang_titles = title_item["text"]
+                        st.success(f"✅ 제목 적용됨!")
+                        st.rerun()
+
+            if st.session_state.selected_title:
+                st.markdown(f'<div class="info-box">현재 적용된 제목: <strong>{st.session_state.selected_title}</strong></div>', unsafe_allow_html=True)
 
         st.markdown("---")
 
@@ -585,21 +644,81 @@ with tab_coupang:
 
         st.markdown("---")
 
-        # 4. 해시태그 20개
-        st.markdown("#### 4️⃣ 해시태그 20개 자동 생성")
+        # 4. 해시태그 20개 (AI 10 + 카테고리DB 5 + 공통 5)
+        st.markdown("#### 4️⃣ 해시태그 자동 생성 (AI + DB)")
+        st.markdown('<div class="info-box">AI 맞춤 10개 + 카테고리 DB 5개 + 공통 필수 5개 = 총 20개 해시태그를 생성합니다.</div>', unsafe_allow_html=True)
+
         if st.button("✨ 해시태그 20개 생성", key="gen_hashtags"):
-            with st.spinner("해시태그 생성 중..."):
+            with st.spinner("AI 해시태그 생성 + 카테고리 DB 조합 중..."):
                 cmode = st.session_state.content_mode
+                # AI로 맞춤 해시태그 10개 생성
                 result = call_claude(
-                    "SNS 해시태그 전문가. 해시태그만 출력. 줄바꿈 없이 공백으로 구분.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품 숏폼 영상에 최적화된 해시태그 20개.\n조건:\n- #제품명 #카테고리 필수 포함\n- #쿠팡 #쿠팡추천 #쿠팡파트너스 포함\n- #shorts #fyp #viral 포함\n- '{cmode}' 목적에 맞는 해시태그 추가\n- 나머지는 검색량 높은 관련 키워드\n- 모두 # 붙여서 공백으로 구분"
+                    "SNS 해시태그 전문가. 해시태그만 출력. # 붙여서 공백으로 구분. 딱 10개만.",
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품에 최적화된 해시태그 10개를 만들어줘.\n조건:\n- 제품 특성에 맞는 검색량 높은 키워드\n- '{cmode}' 목적에 맞는 태그 포함\n- #shorts #fyp #viral 중 2개 포함\n- 모두 # 붙여서 공백으로 구분\n- 딱 10개만 출력"
                 )
                 if result:
-                    st.session_state.coupang_hashtags = result
+                    # AI 결과 파싱
+                    ai_tags = [t.strip() for t in result.strip().split() if t.strip().startswith("#")][:10]
+
+                    # 카테고리 DB에서 5개 랜덤 선택 (AI와 중복 제거)
+                    cat_pool = CATEGORY_HASHTAGS.get(pcat, CATEGORY_HASHTAGS["기타"])
+                    cat_available = [t for t in cat_pool if t not in ai_tags]
+                    import random as _rnd
+                    cat_tags = _rnd.sample(cat_available, min(5, len(cat_available)))
+
+                    # 공통 필수 5개 (중복 제거)
+                    common_tags = [t for t in COMMON_HASHTAGS if t not in ai_tags and t not in cat_tags]
+
+                    # 합치기 (중복 제거, 최대 20개)
+                    all_tags = []
+                    seen_tags = set()
+                    for t in common_tags + ai_tags + cat_tags:
+                        if t not in seen_tags:
+                            all_tags.append(t)
+                            seen_tags.add(t)
+                    all_tags = all_tags[:20]
+
+                    st.session_state.hashtag_list = all_tags
+                    # 전체 선택 상태로 초기화
+                    st.session_state.hashtag_selections = {t: True for t in all_tags}
+                    st.session_state.coupang_hashtags = " ".join(all_tags)
+                    st.rerun()
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
 
-        if st.session_state.coupang_hashtags:
+        if st.session_state.hashtag_list:
+            st.markdown("**해시태그 선택** — 체크박스로 포함/제외 가능")
+
+            # 전체선택 / 전체해제 버튼
+            ht_btn1, ht_btn2, ht_btn3 = st.columns(3)
+            with ht_btn1:
+                if st.button("✅ 전체 선택", key="ht_all"):
+                    st.session_state.hashtag_selections = {t: True for t in st.session_state.hashtag_list}
+                    st.rerun()
+            with ht_btn2:
+                if st.button("⬜ 전체 해제", key="ht_none"):
+                    st.session_state.hashtag_selections = {t: False for t in st.session_state.hashtag_list}
+                    st.rerun()
+            with ht_btn3:
+                selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
+                st.metric("선택됨", f"{len(selected_tags)}개")
+
+            # 4열 체크박스 그리드
+            tag_cols_per_row = 4
+            for row_start in range(0, len(st.session_state.hashtag_list), tag_cols_per_row):
+                row_tags = st.session_state.hashtag_list[row_start:row_start+tag_cols_per_row]
+                ht_cols = st.columns(tag_cols_per_row)
+                for col_idx, tag in enumerate(row_tags):
+                    with ht_cols[col_idx]:
+                        # 공통 태그는 라벨 구분
+                        label = f"{tag} 🔒" if tag in COMMON_HASHTAGS else tag
+                        checked = st.session_state.hashtag_selections.get(tag, True)
+                        st.session_state.hashtag_selections[tag] = st.checkbox(label, value=checked, key=f"ht_{tag}")
+
+            # 선택된 해시태그 복사용 출력
+            selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
+            st.session_state.coupang_hashtags = " ".join(selected_tags)
+            st.markdown("**📋 복사용 (선택된 해시태그):**")
             st.code(st.session_state.coupang_hashtags, language=None)
 
         st.markdown("---")
