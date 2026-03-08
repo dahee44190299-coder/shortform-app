@@ -4,6 +4,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 import project_store
+import clip_analyzer
 
 # ── 크로스 플랫폼 임시 디렉토리 ──────────────────────────────────────
 TMPDIR = tempfile.gettempdir()
@@ -231,6 +232,9 @@ defaults = {
     "app_phase":"project_select",  # "project_select" | "template_select" | "pipeline"
     "active_project_id":"",
     "active_template":"",
+    # ── Multi-Video Generator ──
+    "multi_video_enabled":False,
+    "multi_video_outputs":[],
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -2290,6 +2294,72 @@ def render_step1():
                     with st.expander(f"🎬 {vf.name}"):
                         st.video(str(dest))
 
+        # ── 자동 클립 분할 ──
+        st.markdown("---")
+        st.markdown("### ✂️ 자동 클립 분할")
+        st.markdown('<div class="info-box">업로드된 영상을 AI가 장면 단위로 자동 분할합니다. 분할된 클립은 STEP 2에서 편집할 수 있습니다.</div>', unsafe_allow_html=True)
+
+        _auto_split_candidates = [c for c in st.session_state.clips if c.get("source") == "upload" and os.path.exists(c.get("path", ""))]
+        if _auto_split_candidates:
+            _split_target = st.selectbox(
+                "분할할 영상 선택",
+                options=range(len(_auto_split_candidates)),
+                format_func=lambda i: f"{_auto_split_candidates[i]['name']} ({_auto_split_candidates[i]['duration']})",
+                key="auto_split_target"
+            )
+            _split_c1, _split_c2 = st.columns(2)
+            with _split_c1:
+                _split_min = st.slider("최소 클립 길이(초)", 1, 5, 1, key="auto_split_min")
+            with _split_c2:
+                _split_max = st.slider("최대 클립 길이(초)", 5, 30, 10, key="auto_split_max")
+
+            if st.button("🎬 자동 클립 분할", key="btn_auto_split", type="primary", use_container_width=True):
+                _target_clip = _auto_split_candidates[_split_target]
+                with st.status("✂️ 장면 분석 + 클립 분할 중...", expanded=True) as _split_status:
+                    st.write("📊 장면 전환 지점 분석 중...")
+                    _timestamps = clip_analyzer.analyze_scenes(
+                        _target_clip["path"],
+                        min_dur=float(_split_min),
+                        max_dur=float(_split_max)
+                    )
+
+                    if _timestamps:
+                        st.write(f"🔍 {len(_timestamps)}개 장면 전환 감지 → 분할 중...")
+                        _new_clips = clip_analyzer.split_clips(
+                            _target_clip["path"],
+                            _timestamps,
+                            min_dur=float(_split_min)
+                        )
+                    else:
+                        st.write("⚠️ 장면 감지 실패 → 균등 분할 시도 중...")
+                        _fallback_ts = clip_analyzer._uniform_split(
+                            _target_clip.get("dur_sec", 30),
+                            float(_split_min),
+                            float(_split_max)
+                        )
+                        _new_clips = clip_analyzer.split_clips(
+                            _target_clip["path"],
+                            _fallback_ts,
+                            min_dur=float(_split_min)
+                        )
+
+                    if _new_clips:
+                        # 원본 클립 제거 + 분할 클립으로 교체
+                        st.session_state.clips = [
+                            c for c in st.session_state.clips
+                            if c.get("path") != _target_clip["path"]
+                        ] + _new_clips
+                        _split_status.update(label=f"✅ {len(_new_clips)}개 클립 자동 분할 완료!", state="complete")
+                        st.success(f"🎉 {len(_new_clips)}개의 클립이 감지되었습니다! → STEP 2로 이동합니다.")
+                        st.session_state.current_step = 2
+                        st.rerun()
+                    else:
+                        # fallback: 원본 영상 유지
+                        _split_status.update(label="⚠️ 분할 실패 — 원본 유지", state="error")
+                        st.warning("자동 분할에 실패했습니다. 원본 영상이 클립에 유지됩니다.")
+        else:
+            st.caption("위에서 영상을 먼저 업로드하면 자동 분할 기능을 사용할 수 있습니다.")
+
         # 타오바오 안내
         st.markdown("---")
         with st.expander("📥 타오바오 영상 다운로드 방법", expanded=False):
@@ -3041,6 +3111,140 @@ def render_step3():
                         prog.progress(100)
                         st.error(f"❌ 영상 조립 실패: {err_msg or 'FFmpeg 오류'}")
 
+    # ═══════════════════════════════════════════════════════════════
+    # Multi-Video Generator (영상 5개 한번에 생성)
+    # ═══════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown('<div class="ux-card"><div class="ux-card-title">MULTI-VIDEO</div><h4>🎬 Multi-Video 생성</h4><p class="ux-sub">제품 1개 → 템플릿 + Hook 조합이 다른 영상 5개를 한번에 생성합니다</p></div>', unsafe_allow_html=True)
+
+    _mv_pname = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or ""
+    _mv_clips = [c for c in st.session_state.clips if os.path.exists(c.get("path", ""))]
+
+    if not _mv_clips:
+        st.markdown('<div class="warn-box">⚠️ STEP 1에서 클립을 먼저 추가해주세요.</div>', unsafe_allow_html=True)
+    elif not _mv_pname:
+        st.markdown('<div class="warn-box">⚠️ STEP 1에서 제품명을 먼저 입력해주세요.</div>', unsafe_allow_html=True)
+    else:
+        # 5개 영상 조합 미리보기
+        _mv_combos = [
+            {"template": "coupang_shorts",  "hook_type": "A", "hook_label": "문제 제시형", "label": "🛒 쿠팡 쇼츠 + Hook A"},
+            {"template": "coupang_shorts",  "hook_type": "B", "hook_label": "놀람형",     "label": "🛒 쿠팡 쇼츠 + Hook B"},
+            {"template": "tiktok_review",   "hook_type": "A", "hook_label": "문제 제시형", "label": "📱 틱톡 리뷰 + Hook A"},
+            {"template": "problem_solving", "hook_type": "C", "hook_label": "손해 회피형", "label": "🔧 문제 해결 + Hook C"},
+            {"template": "shopping_promo",  "hook_type": "B", "hook_label": "놀람형",     "label": "🏪 쇼핑몰 홍보 + Hook B"},
+        ]
+
+        with st.expander("📋 생성될 영상 5개 조합", expanded=False):
+            for _mvi, _mvc in enumerate(_mv_combos):
+                _tpl_name = TEMPLATES.get(_mvc["template"], {}).get("name", _mvc["template"])
+                st.markdown(f"**영상 {_mvi+1}** — {_tpl_name} · Hook {_mvc['hook_type']} ({_mvc['hook_label']})")
+
+        if st.button("⚡ 영상 5개 한번에 생성", key="btn_multi_video", type="primary", use_container_width=True):
+            _mv_target_dur = st.session_state.get("_w_target_dur", 30)
+            _mv_crop = st.session_state.get("_w_crop_ratio", "9:16 세로형 (숏폼)")
+            _mv_ratio = "9:16" if "9:16" in _mv_crop else "1:1"
+            _mv_tts_check = os.path.join(TMPDIR, "tts_output.mp3")
+            _mv_tts_path = _mv_tts_check if st.session_state.tts_done and os.path.exists(_mv_tts_check) else None
+            _mv_subs = st.session_state.sample_subs if st.session_state.subtitle_done else []
+            _mv_ass = st.session_state.get("ass_path", "")
+            _mv_bgm = st.session_state.get("selected_bgm", "")
+            _mv_bgm_vol = st.session_state.get("bgm_volume", 0.2)
+            _mv_pcat = st.session_state.coupang_category or "기타"
+            _mv_cmode = st.session_state.content_mode or "클릭유도형"
+
+            _mv_results = []
+            _mv_out_dir = _ensure_dir("multi_video_output")
+
+            with st.status("🎬 Multi-Video 5개 생성 중...", expanded=True) as _mv_status:
+                for _mvi, _mvc in enumerate(_mv_combos):
+                    st.write(f"**영상 {_mvi+1} / 5** 생성 중 — {_mvc['label']}...")
+
+                    # 1. 해당 템플릿의 설정 가져오기
+                    _mv_tpl = TEMPLATES.get(_mvc["template"], {})
+                    _mv_cta_text = _mv_tpl.get("cta_text", st.session_state.get("cta_text", ""))
+                    _mv_cta_color = _mv_tpl.get("sub_color", st.session_state.get("cta_color", "#FFFFFF"))
+                    _mv_cta_pos = _mv_tpl.get("cta_position", "하단")
+                    _mv_cta_dur = st.session_state.get("cta_duration", 3)
+                    _mv_pi = _mv_tpl.get("pattern_interrupt", False)
+                    _mv_rb = _mv_tpl.get("retention_booster", True)
+
+                    # 2. Hook 텍스트 생성
+                    _hook_map = {"A": "문제 제시형", "B": "놀람형", "C": "손해 회피형"}
+                    _mv_hooks = generate_hooks(_mv_pname, _mv_pcat, _mv_cmode, count=3)
+                    _hook_idx = {"A": 0, "B": 1, "C": 2}.get(_mvc["hook_type"], 0)
+                    _mv_hook = [_mv_hooks[min(_hook_idx, len(_mv_hooks)-1)]] if _mv_hooks else []
+
+                    if not _mv_hook:
+                        _mv_hook = [{"name": _mvc["hook_type"], "type": _mvc["hook_label"],
+                                     "hook_text": f"{_mv_pname} 지금 확인하세요"}]
+
+                    # 3. assemble_hook_versions로 영상 생성 (Hook 1개만 = 단일 영상)
+                    try:
+                        _mv_ver_results = assemble_hook_versions(
+                            _mv_clips, _mv_subs, _mv_tts_path, _mv_target_dur,
+                            crop_ratio=_mv_ratio, ass_path=_mv_ass,
+                            bgm_path=_mv_bgm, bgm_volume=_mv_bgm_vol,
+                            cta_text=_mv_cta_text, cta_position=_mv_cta_pos,
+                            cta_duration=_mv_cta_dur, cta_color=_mv_cta_color,
+                            hook_clip_path=None, hooks=_mv_hook, hook_dur=3.0,
+                            pattern_interrupt=_mv_pi, retention_booster=_mv_rb
+                        )
+                    except Exception as _mv_err:
+                        _mv_ver_results = []
+                        st.write(f"⚠️ 영상 {_mvi+1} 생성 실패: {_mv_err}")
+
+                    # 4. 결과 저장 — 고유 파일명으로 복사
+                    if _mv_ver_results and _mv_ver_results[0].get("video_path") and os.path.exists(_mv_ver_results[0]["video_path"]):
+                        import shutil
+                        _mv_final_name = f"multi_video_{_mvi+1}_{_mvc['template']}_hook{_mvc['hook_type']}.mp4"
+                        _mv_final_path = str(_mv_out_dir / _mv_final_name)
+                        shutil.copy2(_mv_ver_results[0]["video_path"], _mv_final_path)
+                        _mv_results.append({
+                            "name": f"video_{_mvi+1}",
+                            "template": TEMPLATES.get(_mvc["template"], {}).get("name", _mvc["template"]),
+                            "template_key": _mvc["template"],
+                            "hook_type": _mvc["hook_type"],
+                            "hook_label": _mvc["hook_label"],
+                            "hook_text": _mv_ver_results[0].get("hook_text", ""),
+                            "video_path": _mv_final_path,
+                            "subtitle_path": _mv_ver_results[0].get("subtitle_path", ""),
+                            "audio_path": _mv_ver_results[0].get("audio_path", ""),
+                            "label": _mvc["label"],
+                        })
+                    else:
+                        _mv_results.append({
+                            "name": f"video_{_mvi+1}",
+                            "template": TEMPLATES.get(_mvc["template"], {}).get("name", _mvc["template"]),
+                            "template_key": _mvc["template"],
+                            "hook_type": _mvc["hook_type"],
+                            "hook_label": _mvc["hook_label"],
+                            "hook_text": "",
+                            "video_path": "",
+                            "subtitle_path": "",
+                            "audio_path": "",
+                            "label": _mvc["label"],
+                            "error": "생성 실패",
+                        })
+
+                _mv_success = sum(1 for r in _mv_results if r.get("video_path"))
+                _mv_status.update(label=f"✅ Multi-Video {_mv_success}/5개 생성 완료!", state="complete" if _mv_success > 0 else "error")
+
+            st.session_state.multi_video_outputs = _mv_results
+
+            if _mv_success > 0:
+                st.success(f"🎉 Multi-Video {_mv_success}/5개 생성 완료! → STEP 4에서 다운로드하세요.")
+                # 첫 번째 성공한 영상을 output_path에도 설정
+                _first_mv = next((r for r in _mv_results if r.get("video_path")), None)
+                if _first_mv:
+                    st.session_state.output_path = _first_mv["video_path"]
+            else:
+                st.error("❌ 모든 영상 생성에 실패했습니다.")
+
+            # 임시파일 정리
+            _cleaned = cleanup_hook_temp_files()
+            if _cleaned > 0:
+                st.caption(f"🧹 임시 파일 {_cleaned}개 정리 완료")
+
     _render_nav_buttons()
 
 
@@ -3239,10 +3443,57 @@ def render_step4():
     if aff_link:
         st.markdown(f'<div class="info-box">🔗 쿠팡 파트너스 링크가 설명란에 자동 포함되었습니다.</div>', unsafe_allow_html=True)
 
-    # ═══════ Hook A/B 테스트 결과 미리보기 ═══════
+    # ═══════════════════════════════════════════════════════════════
+    # 결과 표시 우선순위: Multi-Video > Hook A/B > 단일 영상
+    # ═══════════════════════════════════════════════════════════════
+
+    _mv_outputs = st.session_state.get("multi_video_outputs", [])
+    _mv_has_videos = any(r.get("video_path") and os.path.exists(r.get("video_path", "")) for r in _mv_outputs)
     _hook_versions = st.session_state.get("hook_versions", [])
     _hook_has_videos = any(h.get("video_path") and os.path.exists(h.get("video_path", "")) for h in _hook_versions)
+    _single_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
 
+    # ── 1순위: Multi-Video 결과 ──
+    if _mv_has_videos:
+        _mv_success = [r for r in _mv_outputs if r.get("video_path") and os.path.exists(r.get("video_path", ""))]
+        st.markdown(f"### 🎬 Multi-Video 결과 ({len(_mv_success)}/5개)")
+        st.markdown('<div class="info-box">템플릿 + Hook 조합이 다른 영상 5개입니다. 각 영상을 플랫폼별로 다운로드하세요!</div>', unsafe_allow_html=True)
+
+        for _mvi, _mvr in enumerate(_mv_outputs):
+            _tpl_badge = "badge-blue"
+            if "쿠팡" in _mvr.get("template", ""): _tpl_badge = "badge-red"
+            elif "틱톡" in _mvr.get("template", ""): _tpl_badge = "badge-green"
+            elif "문제" in _mvr.get("template", ""): _tpl_badge = "badge-dark"
+
+            st.markdown(f'<div class="card" style="margin-bottom:12px;"><span class="badge {_tpl_badge}">영상 {_mvi+1}</span> &nbsp; <strong>{_mvr.get("label", "")}</strong></div>', unsafe_allow_html=True)
+
+            if _mvr.get("video_path") and os.path.exists(_mvr["video_path"]):
+                _mv_vc1, _mv_vc2 = st.columns([2, 3])
+                with _mv_vc1:
+                    st.video(_mvr["video_path"])
+                with _mv_vc2:
+                    st.markdown(f"**템플릿:** {_mvr.get('template', '')}")
+                    st.markdown(f"**Hook:** {_mvr.get('hook_type', '')} ({_mvr.get('hook_label', '')})")
+                    if _mvr.get("hook_text"):
+                        st.caption(f'"{_mvr["hook_text"]}"')
+                    # 플랫폼별 다운로드
+                    _mv_dl_cols = st.columns(3)
+                    for _pi, (platform, p_icon) in enumerate([("유튜브", "▶"), ("인스타", "📸"), ("틱톡", "🎵")]):
+                        with _mv_dl_cols[_pi]:
+                            with open(_mvr["video_path"], "rb") as f:
+                                st.download_button(
+                                    f"{p_icon} {platform}",
+                                    data=f.read(),
+                                    file_name=f"{pn}_mv{_mvi+1}_{platform}.mp4",
+                                    mime="video/mp4",
+                                    use_container_width=True,
+                                    key=f"dl_mv_{_mvi}_{platform}"
+                                )
+            elif _mvr.get("error"):
+                st.warning(f"⚠️ 영상 {_mvi+1} 생성 실패: {_mvr['error']}")
+        st.markdown("---")
+
+    # ── 2순위: Hook A/B 테스트 결과 ──
     if st.session_state.hook_test_enabled and _hook_has_videos:
         st.markdown("### 🪝 Hook A/B 테스트 결과")
         st.markdown('<div class="info-box">같은 제품, 첫 3초만 다른 영상입니다. 성과를 비교해보세요!</div>', unsafe_allow_html=True)
@@ -3273,11 +3524,10 @@ def render_step4():
                     st.warning("영상 없음")
         st.markdown("---")
 
-    # ═══════ 플랫폼별 다운로드 (기존 단일 영상) ═══════
+    # ── 3순위: 플랫폼별 다운로드 (단일 영상) ──
     st.markdown("### 📥 플랫폼별 다운로드")
-    video_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
 
-    if not video_ready:
+    if not _single_ready:
         st.markdown('<div class="warn-box">⚠️ STEP 3에서 영상 조립을 먼저 완료해주세요.</div>', unsafe_allow_html=True)
 
     specs = [
@@ -3290,7 +3540,7 @@ def render_step4():
         with si1:
             st.markdown(f'<div class="card" style="margin-bottom:8px;"><strong>{name}</strong> &nbsp; <span class="badge {badge}">{spec}</span></div>', unsafe_allow_html=True)
         with si2:
-            if video_ready:
+            if _single_ready:
                 with open(st.session_state.output_path, "rb") as f:
                     st.download_button("⬇️ 다운로드", data=f.read(), file_name=fn, mime="video/mp4", use_container_width=True, key=f"dl_{name}")
             else:
