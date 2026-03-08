@@ -111,6 +111,7 @@ defaults = {
     "hashtag_list":[], "hashtag_selections":{},
     "generated_titles":[], "selected_title":"",
     "sub_animation":"없음", "sub_margin":50, "ass_path":"",
+    "bgm_results":[], "selected_bgm":"", "bgm_volume":0.2,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -128,6 +129,18 @@ CATEGORY_HASHTAGS = {
     "기타": ["#추천템","#꿀템","#갓성비","#리뷰","#솔직리뷰","#하울","#쇼핑","#언박싱","#쿠팡발견","#트렌드","#인기템","#핫딜","#가성비","#신상품","#필수템","#베스트셀러"],
 }
 COMMON_HASHTAGS = ["#쿠팡","#쿠팡파트너스","#추천템","#구매링크","#숏폼"]
+
+# ── BGM 카테고리별 검색 키워드 매핑 ─────────────────────────────
+BGM_CATEGORY_KEYWORDS = {
+    "생활용품": "upbeat positive",
+    "뷰티/화장품": "elegant soft",
+    "전자기기": "tech modern",
+    "패션/의류": "fashion trendy",
+    "식품": "cheerful fun",
+    "건강/헬스": "energetic motivational",
+    "유아/키즈": "cute happy",
+    "기타": "upbeat positive",
+}
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────
 def get_api_key(name):
@@ -204,8 +217,8 @@ def get_video_duration(path):
     except:
         return 0
 
-def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None):
-    """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 지원)"""
+def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2):
+    """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 + BGM 믹싱 지원)"""
     tmp = _ensure_dir("shortform_build")
 
     # 1. 클립 파일 확인
@@ -267,11 +280,32 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
 
     cmd = ["ffmpeg", "-y", "-i", str(concat_out)]
 
-    # TTS 오디오 합성
-    if tts_path and os.path.exists(tts_path):
+    # TTS + BGM 오디오 합성
+    has_tts = tts_path and os.path.exists(tts_path)
+    has_bgm = bgm_path and os.path.exists(bgm_path)
+
+    if has_tts:
         cmd += ["-i", tts_path]
+    if has_bgm:
+        cmd += ["-stream_loop", "-1", "-i", bgm_path]
+
+    if has_tts and has_bgm:
+        tts_idx, bgm_idx = 1, 2
+        cmd += ["-filter_complex",
+                f"[{bgm_idx}:a]volume={bgm_volume}[bgml];[{tts_idx}:a][bgml]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                "-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-map", "0:v", "-map", "[aout]", "-c:a", "aac", "-shortest",
+                str(final_out)]
+    elif has_tts:
         cmd += ["-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-map", "0:v", "-map", "1:a", "-c:a", "aac", "-shortest",
+                str(final_out)]
+    elif has_bgm:
+        bgm_idx = 1
+        cmd += ["-filter_complex",
+                f"[{bgm_idx}:a]volume={bgm_volume}[bgm]",
+                "-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-map", "0:v", "-map", "[bgm]", "-c:a", "aac", "-shortest",
                 str(final_out)]
     else:
         cmd += ["-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
@@ -511,6 +545,50 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     return str(ass_path) if ass_path.exists() else None
 
+def search_pixabay_music(keyword, n=3):
+    """Pixabay Music API로 BGM 검색 (실패 시 빈 리스트 반환)"""
+    key = get_api_key("PIXABAY_API_KEY")
+    if not key:
+        return []
+    try:
+        r = requests.get("https://pixabay.com/api/",
+                         params={"key": key, "q": keyword, "per_page": n,
+                                 "order": "popular", "safesearch": "true"},
+                         timeout=10)
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        results = []
+        for hit in data.get("hits", []):
+            # Pixabay 응답에서 오디오 URL 탐색 (여러 필드 후보)
+            audio_url = (hit.get("audio", "") or hit.get("previewURL", "") or
+                         hit.get("musicURL", "") or hit.get("webformatURL", ""))
+            if audio_url:
+                results.append({
+                    "id": hit.get("id", 0),
+                    "title": (hit.get("title", "") or hit.get("tags", "BGM"))[:40],
+                    "url": audio_url,
+                    "duration": hit.get("duration", 0),
+                    "tags": hit.get("tags", ""),
+                })
+        return results[:n]
+    except:
+        return []
+
+def download_bgm(url, dest_path):
+    """BGM 파일 다운로드"""
+    try:
+        r = requests.get(url, stream=True, timeout=30,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            with open(dest_path, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+            return os.path.getsize(dest_path) > 1000
+    except:
+        pass
+    return False
+
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
 <div style="padding:32px 0 16px;">
@@ -589,6 +667,7 @@ with st.sidebar:
             ("클로바 TTS", "CLOVA_TTS_CLIENT_ID"),
             ("ElevenLabs", "ELEVENLABS_API_KEY"),
             ("Pexels 검색", "PEXELS_API_KEY"),
+            ("Pixabay BGM", "PIXABAY_API_KEY"),
         ]:
             ok = has_key(env)
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
@@ -1347,6 +1426,66 @@ with tab_sub:
                     st.session_state.sample_subs.pop(i)
                     st.rerun()
 
+    # ── BGM 자동 검색 & 선택 ──
+    st.markdown("---")
+    st.markdown('<div class="card"><div class="card-label">BGM</div><h3>🎵 BGM 배경 음악 (선택사항)</h3></div>', unsafe_allow_html=True)
+
+    if not has_key("PIXABAY_API_KEY"):
+        st.markdown('<div class="warn-box">⚠️ PIXABAY_API_KEY 미설정 — BGM 검색이 작동하지 않습니다. Secrets에 키를 등록하세요.</div>', unsafe_allow_html=True)
+
+    bgm_c1, bgm_c2 = st.columns([3, 1])
+    with bgm_c1:
+        pcat_bgm = st.session_state.coupang_category or "기타"
+        default_kw = BGM_CATEGORY_KEYWORDS.get(pcat_bgm, "upbeat positive")
+        bgm_keyword = st.text_input("BGM 검색어", value=default_kw, placeholder="예: upbeat positive", key="bgm_kw_input")
+    with bgm_c2:
+        st.session_state.bgm_volume = st.slider("BGM 볼륨", 0.1, 0.4, st.session_state.bgm_volume, 0.05, key="bgm_vol_slider")
+
+    if st.button("🎵 BGM 자동 검색", key="search_bgm"):
+        with st.spinner("Pixabay에서 BGM 검색 중..."):
+            results = search_pixabay_music(bgm_keyword, n=3)
+            if results:
+                st.session_state.bgm_results = results
+                st.success(f"✅ {len(results)}개 BGM 후보 발견!")
+            else:
+                st.session_state.bgm_results = []
+                st.warning("BGM 검색 실패 — API 키를 확인하거나 다른 키워드를 시도하세요. BGM 없이도 영상 제작이 가능합니다.")
+
+    if st.session_state.bgm_results:
+        for bi, bgm in enumerate(st.session_state.bgm_results):
+            bc1, bc2, bc3 = st.columns([4, 1, 1])
+            with bc1:
+                title_str = bgm.get("title", "BGM")
+                dur_str = f"{bgm.get('duration', 0)}초" if bgm.get("duration") else ""
+                st.markdown(f"**🎵 {title_str}** &nbsp; {dur_str}")
+                if bgm.get("tags"):
+                    st.caption(bgm["tags"][:60])
+            with bc2:
+                if bgm.get("url"):
+                    st.audio(bgm["url"])
+            with bc3:
+                is_selected = st.session_state.selected_bgm and str(bgm["id"]) in st.session_state.selected_bgm
+                if is_selected:
+                    st.markdown('<span class="badge badge-green">✓ 선택됨</span>', unsafe_allow_html=True)
+                else:
+                    if st.button("✅ 선택", key=f"sel_bgm_{bi}", use_container_width=True):
+                        # BGM 다운로드
+                        bgm_dir = _ensure_dir("shortform_bgm")
+                        bgm_dest = bgm_dir / f"bgm_{bgm['id']}.mp3"
+                        with st.spinner("BGM 다운로드 중..."):
+                            if download_bgm(bgm["url"], str(bgm_dest)):
+                                st.session_state.selected_bgm = str(bgm_dest)
+                                st.success(f"✅ BGM 선택 완료!")
+                                st.rerun()
+                            else:
+                                st.warning("BGM 다운로드 실패 — BGM 없이 진행 가능합니다.")
+
+    if st.session_state.selected_bgm:
+        st.markdown(f'<div class="info-box">🎵 선택된 BGM: <strong>{os.path.basename(st.session_state.selected_bgm)}</strong> (볼륨 {int(st.session_state.bgm_volume*100)}%)</div>', unsafe_allow_html=True)
+        if st.button("🗑️ BGM 선택 해제", key="clear_bgm"):
+            st.session_state.selected_bgm = ""
+            st.rerun()
+
     # 영상 조립
     st.markdown("---")
     st.markdown('<div class="card"><div class="card-label">STEP 05</div><h3>🎬 최종 영상 조립</h3></div>', unsafe_allow_html=True)
@@ -1381,7 +1520,10 @@ with tab_sub:
                 prog.progress(50)
 
                 ass_file = st.session_state.get("ass_path", "")
-                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio, ass_path=ass_file)
+                bgm_file = st.session_state.get("selected_bgm", "")
+                bgm_vol = st.session_state.get("bgm_volume", 0.2)
+                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio,
+                                                  ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol)
 
                 if output and os.path.exists(output):
                     prog.progress(100)
@@ -1449,6 +1591,7 @@ with tab_dl:
 ANTHROPIC_API_KEY = "sk-ant-..."     # AI 스크립트/자막
 ELEVENLABS_API_KEY = "sk_..."        # TTS 음성합성
 PEXELS_API_KEY = "..."               # 무료 영상 검색
+PIXABAY_API_KEY = "..."              # BGM 음악 검색
 
 # (선택) 클로바 TTS
 CLOVA_TTS_CLIENT_ID = "..."
