@@ -110,6 +110,7 @@ defaults = {
     "hook_suggestions":[], "selected_hook":"",
     "hashtag_list":[], "hashtag_selections":{},
     "generated_titles":[], "selected_title":"",
+    "sub_animation":"없음", "sub_margin":50, "ass_path":"",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -203,8 +204,8 @@ def get_video_duration(path):
     except:
         return 0
 
-def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
-    """FFmpeg로 실제 영상 조립 (에러 체크 포함)"""
+def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None):
+    """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 지원)"""
     tmp = _ensure_dir("shortform_build")
 
     # 1. 클립 파일 확인
@@ -241,8 +242,12 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
     else:
         vf_filters.append("scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080")
 
-    # 자막 drawtext (한글 폰트 자동 감지)
-    if subs:
+    # 자막: ASS 파일 우선 → drawtext fallback
+    if ass_path and os.path.exists(ass_path):
+        # ASS 자막 필터 (키워드 하이라이트, 외곽선, 그림자 포함)
+        ass_escaped = str(ass_path).replace("\\", "/").replace(":", "\\:")
+        vf_filters.append(f"ass='{ass_escaped}'")
+    elif subs:
         fontpath = find_korean_font()
         if fontpath:
             fontpath_escaped = fontpath.replace("\\", "/").replace(":", "\\:")
@@ -250,7 +255,7 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
                 text = s["text"].replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
                 vf_filters.append(
                     f"drawtext=fontfile='{fontpath_escaped}':text='{text}':"
-                    f"fontcolor=white:fontsize=48:"
+                    f"fontcolor=white:fontsize=48:borderw=3:"
                     f"x=(w-text_w)/2:y=h-200:shadowcolor=black:shadowx=3:shadowy=3:"
                     f"enable='between(t,{s['start']},{s['end']})'"
                 )
@@ -418,6 +423,93 @@ def images_to_kenburns_video(image_paths, dur_per_img=3, output_path=None, resol
     if r.returncode == 0 and os.path.exists(output_path):
         return str(output_path), None
     return None, f"Ken Burns 합성 실패: {r.stderr[-200:] if r.stderr else 'unknown'}"
+
+def _hex_to_ass_color(hex_color):
+    """#RRGGBB → &H00BBGGRR (ASS BGR 포맷)"""
+    h = hex_color.lstrip("#")
+    r, g, b = h[0:2], h[2:4], h[4:6]
+    return f"&H00{b}{g}{r}"
+
+def _highlight_keywords(text, product_name=""):
+    """자막 텍스트에서 키워드를 노란색 ASS 태그로 감싸기"""
+    highlight_color = "&H0033E0FF&"  # #FFE033 in ASS BGR
+    keywords = ["무료", "할인", "추천", "최저가", "세일", "특가", "무배", "가성비", "쿠팡", "링크"]
+    if product_name:
+        keywords.append(product_name)
+    # 숫자+단위 패턴 (가격, 퍼센트)
+    import re as _re
+    result = _re.sub(r'(\d[\d,]*\s*(?:원|%|퍼센트|만원|천원|개|배))', rf'{{\\c{highlight_color}}}\1{{\\r}}', text)
+    for kw in keywords:
+        if kw and kw in result:
+            result = result.replace(kw, f'{{\\c{highlight_color}}}{kw}{{\\r}}')
+    return result
+
+def generate_ass_subtitle(subs, fontpath, product_name="", sub_size=48, sub_pos="하단 중앙",
+                          sub_col="#FFFFFF", sub_bold=True, sub_anim="없음", sub_margin=50):
+    """자막 리스트 → ASS 자막 파일 생성, 키워드 하이라이트 포함"""
+    tmp = _ensure_dir("shortform_build")
+    ass_path = tmp / "subtitle.ass"
+
+    # 폰트명 추출
+    fontname = "NanumGothic"
+    if fontpath:
+        fn = os.path.basename(fontpath).replace(".ttf", "").replace(".ttc", "")
+        fontname = fn
+
+    # 색상 변환
+    primary_color = _hex_to_ass_color(sub_col)
+    outline_color = "&H00000000"  # 검정 외곽선
+    shadow_color = "&H80000000"   # 반투명 검정 그림자
+
+    # 위치 → Alignment (numpad 스타일)
+    alignment_map = {"하단 중앙": 2, "상단 중앙": 8, "중앙": 5}
+    alignment = alignment_map.get(sub_pos, 2)
+
+    bold_val = -1 if sub_bold else 0
+    outline = 3
+    shadow = 2
+
+    # ASS 헤더
+    ass_content = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,{fontname},{sub_size},{primary_color},&H000000FF,{outline_color},{shadow_color},{bold_val},0,0,0,100,100,0,0,1,{outline},{shadow},{alignment},20,20,{sub_margin},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    # 이벤트 라인
+    for s in subs:
+        start_h = int(s["start"] // 3600)
+        start_m = int((s["start"] % 3600) // 60)
+        start_s = s["start"] % 60
+        end_h = int(s["end"] // 3600)
+        end_m = int((s["end"] % 3600) // 60)
+        end_s = s["end"] % 60
+
+        start_ts = f"{start_h}:{start_m:02d}:{start_s:05.2f}"
+        end_ts = f"{end_h}:{end_m:02d}:{end_s:05.2f}"
+
+        # 키워드 하이라이트 적용
+        highlighted = _highlight_keywords(s["text"], product_name)
+
+        # 애니메이션 태그
+        anim_tag = ""
+        if sub_anim == "페이드인/아웃":
+            anim_tag = "{\\fad(200,200)}"
+
+        ass_content += f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{anim_tag}{highlighted}\n"
+
+    with open(ass_path, "w", encoding="utf-8-sig") as f:
+        f.write(ass_content)
+
+    return str(ass_path) if ass_path.exists() else None
 
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
@@ -1184,13 +1276,18 @@ with tab_script:
 with tab_sub:
     st.markdown('<div class="card"><div class="card-label">STEP 04</div><h3>📝 자막 생성 & 🎬 영상 조립</h3></div>', unsafe_allow_html=True)
 
-    sub_c1, sub_c2 = st.columns(2)
+    sub_c1, sub_c2, sub_c3 = st.columns(3)
     with sub_c1:
         sub_size = st.slider("자막 크기", 24, 72, 48)
-        sub_pos = st.selectbox("위치", ["하단 중앙", "상단 중앙", "중앙"])
+        sub_pos = st.radio("위치", ["하단 중앙", "상단 중앙", "중앙"], horizontal=True)
     with sub_c2:
-        sub_col = st.color_picker("색상", "#FFFFFF")
-        sub_bold = st.checkbox("굵게", value=True)
+        sub_col = st.color_picker("텍스트 색상", "#FFFFFF")
+        sub_bold = st.checkbox("굵게 (Bold)", value=True)
+    with sub_c3:
+        st.session_state.sub_animation = st.radio("애니메이션", ["없음", "페이드인/아웃"], horizontal=True)
+        st.session_state.sub_margin = st.slider("세로 여백 (px)", 20, 200, 50)
+
+    st.markdown('<div class="info-box">💡 ASS 자막: 외곽선 3px + 그림자 2px 자동 적용. 제품명·가격·할인 등 키워드는 노란색 하이라이트됩니다.</div>', unsafe_allow_html=True)
 
     if st.button("📝 스크립트 기반 자막 생성"):
         if st.session_state.script:
@@ -1218,7 +1315,22 @@ with tab_sub:
 
             st.session_state.sample_subs = subs
             st.session_state.subtitle_done = True
-            st.success("✅ 자막 생성 완료!")
+
+            # ASS 자막 파일 자동 생성
+            fontpath = find_korean_font()
+            pn_for_highlight = product_name or st.session_state.coupang_product or ""
+            ass_result = generate_ass_subtitle(
+                subs, fontpath, product_name=pn_for_highlight,
+                sub_size=sub_size, sub_pos=sub_pos, sub_col=sub_col,
+                sub_bold=sub_bold, sub_anim=st.session_state.sub_animation,
+                sub_margin=st.session_state.sub_margin
+            )
+            if ass_result:
+                st.session_state.ass_path = ass_result
+                st.success("✅ ASS 자막 생성 완료! (키워드 하이라이트 적용됨)")
+            else:
+                st.session_state.ass_path = ""
+                st.success("✅ 자막 생성 완료! (ASS 파일 생성 실패 → drawtext fallback)")
         else:
             st.warning("스크립트를 먼저 생성해주세요.")
 
@@ -1268,7 +1380,8 @@ with tab_sub:
                 stat.text("🎬 FFmpeg 영상 합성 중... (최대 2분)")
                 prog.progress(50)
 
-                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio)
+                ass_file = st.session_state.get("ass_path", "")
+                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio, ass_path=ass_file)
 
                 if output and os.path.exists(output):
                     prog.progress(100)
