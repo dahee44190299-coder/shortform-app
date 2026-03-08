@@ -106,6 +106,8 @@ defaults = {
     "coupang_product":"", "coupang_category":"", "coupang_titles":[],
     "coupang_script":"", "coupang_hashtags":"", "coupang_desc":"",
     "product_images":[], "uploaded_images":[],
+    "content_mode":"클릭유도형", "coupang_affiliate_link":"",
+    "hook_suggestions":[], "selected_hook":"",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -416,6 +418,37 @@ with st.sidebar:
     st.markdown("---")
     product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X")
     product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85)
+
+    st.markdown("---")
+    st.markdown("**🎯 콘텐츠 목적**")
+    content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
+    mode_desc = {
+        "클릭유도형": "궁금증·충격으로 클릭 유도",
+        "구매전환형": "구매 결정을 촉진",
+        "리뷰형": "사용 후기·장단점 중심",
+        "비교형": "경쟁 제품과 비교 분석",
+        "문제해결형": "문제 제시 → 해결",
+        "바이럴형": "공유·밈·감성 자극",
+    }
+    st.session_state.content_mode = st.selectbox(
+        "목적 선택",
+        content_modes,
+        index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
+        help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
+    )
+    st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
+
+    st.markdown("---")
+    st.markdown("**🔗 쿠팡 파트너스 링크**")
+    st.session_state.coupang_affiliate_link = st.text_input(
+        "제휴 링크 URL",
+        value=st.session_state.coupang_affiliate_link,
+        placeholder="https://link.coupang.com/...",
+        help="유튜브/인스타 설명란에 자동 삽입됩니다."
+    )
+    if st.session_state.coupang_affiliate_link:
+        st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
+
     st.markdown("---")
 
     st.markdown("**🎙️ TTS 설정**")
@@ -504,9 +537,10 @@ with tab_coupang:
         st.markdown("#### 2️⃣ 후킹 제목 자동 생성")
         if st.button("✨ AI 제목 5개 생성", key="gen_titles"):
             with st.spinner("후킹 제목 생성 중..."):
+                cmode = st.session_state.content_mode
                 result = call_claude(
                     "숏폼 마케팅 전문가. 제목만 출력. 번호 매겨서.",
-                    f"제품: {pname}\n카테고리: {pcat}\n\n이 제품의 숏폼 영상 후킹 제목 5개를 만들어줘.\n조건:\n- 클릭 유도형 (궁금증, 충격, 비교)\n- 15자 이내\n- 이모지 1-2개 포함\n- 유튜브 쇼츠/릴스에 최적화"
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품의 숏폼 영상 후킹 제목 5개를 만들어줘.\n조건:\n- '{cmode}' 스타일에 맞게 작성\n- 15자 이내\n- 이모지 1-2개 포함\n- 유튜브 쇼츠/릴스에 최적화"
                 )
                 if result:
                     st.session_state.coupang_titles = result
@@ -522,9 +556,18 @@ with tab_coupang:
         st.markdown("#### 3️⃣ 30~45초 스크립트 자동 생성")
         if st.button("✨ AI 스크립트 생성", key="gen_coupang_script"):
             with st.spinner("스크립트 생성 중..."):
+                cmode = st.session_state.content_mode
+                mode_guide = {
+                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도. 첫 문장에 '이걸 모르면...' 같은 호기심 자극.",
+                    "구매전환형": "할인·한정·혜택 강조. CTA에서 즉시 구매 촉진. '지금 안 사면 후회' 느낌.",
+                    "리뷰형": "실제 사용 경험 중심. 장점·단점 솔직하게. 신뢰감 있는 톤.",
+                    "비교형": "경쟁 제품 대비 차별점 강조. 'A vs B' 구조. 데이터·수치 활용.",
+                    "문제해결형": "일상 불편함 제시 → 이 제품이 해결. before/after 느낌.",
+                    "바이럴형": "밈·유머·감성 자극. 공유하고 싶은 콘텐츠. 트렌디한 표현.",
+                }
                 result = call_claude(
                     "쿠팡 파트너스 숏폼 스크립트 전문가. 스크립트만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: 짧은 문장, 구어체, 감정적 표현"
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
                 )
                 if result:
                     st.session_state.coupang_script = result
@@ -546,9 +589,10 @@ with tab_coupang:
         st.markdown("#### 4️⃣ 해시태그 20개 자동 생성")
         if st.button("✨ 해시태그 20개 생성", key="gen_hashtags"):
             with st.spinner("해시태그 생성 중..."):
+                cmode = st.session_state.content_mode
                 result = call_claude(
                     "SNS 해시태그 전문가. 해시태그만 출력. 줄바꿈 없이 공백으로 구분.",
-                    f"제품: {pname}\n카테고리: {pcat}\n\n이 제품 숏폼 영상에 최적화된 해시태그 20개.\n조건:\n- #제품명 #카테고리 필수 포함\n- #쿠팡 #쿠팡추천 #쿠팡파트너스 포함\n- #shorts #fyp #viral 포함\n- 나머지는 검색량 높은 관련 키워드\n- 모두 # 붙여서 공백으로 구분"
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품 숏폼 영상에 최적화된 해시태그 20개.\n조건:\n- #제품명 #카테고리 필수 포함\n- #쿠팡 #쿠팡추천 #쿠팡파트너스 포함\n- #shorts #fyp #viral 포함\n- '{cmode}' 목적에 맞는 해시태그 추가\n- 나머지는 검색량 높은 관련 키워드\n- 모두 # 붙여서 공백으로 구분"
                 )
                 if result:
                     st.session_state.coupang_hashtags = result
@@ -564,9 +608,13 @@ with tab_coupang:
         st.markdown("#### 5️⃣ 유튜브 / 인스타 설명란 자동 생성")
         if st.button("✨ 설명란 자동 생성", key="gen_desc"):
             with st.spinner("설명란 생성 중..."):
+                aff_link = st.session_state.coupang_affiliate_link
+                link_instruction = ""
+                if aff_link:
+                    link_instruction = f"\n\n중요: 아래 쿠팡 파트너스 링크를 설명란에 반드시 포함해줘:\n{aff_link}\n유튜브 설명란에는 '쿠팡에서 확인하기 👇' 바로 아래에, 인스타 설명란에는 '프로필 링크' 대신 이 링크를 넣어줘."
                 result = call_claude(
                     "SNS 마케팅 카피라이터. 설명란만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n해시태그: {st.session_state.coupang_hashtags}\n\n유튜브 쇼츠 + 인스타 릴스용 설명란을 각각 작성해줘.\n\n[유튜브 설명란]\n- 제품 한줄 소개\n- '쿠팡에서 확인하기 👇' (링크 자리)\n- 해시태그\n\n[인스타 설명란]\n- 감성적 한줄 + 이모지\n- 제품 특징 3줄\n- '프로필 링크에서 확인하세요 🔗'\n- 해시태그"
+                    f"제품: {pname}\n카테고리: {pcat}\n해시태그: {st.session_state.coupang_hashtags}\n\n유튜브 쇼츠 + 인스타 릴스용 설명란을 각각 작성해줘.\n\n[유튜브 설명란]\n- 제품 한줄 소개\n- '쿠팡에서 확인하기 👇' (링크 자리)\n- 해시태그\n\n[인스타 설명란]\n- 감성적 한줄 + 이모지\n- 제품 특징 3줄\n- '프로필 링크에서 확인하세요 🔗'\n- 해시태그{link_instruction}"
                 )
                 if result:
                     st.session_state.coupang_desc = result
@@ -851,11 +899,63 @@ with tab_script:
         with t2:
             lang = st.selectbox("언어", ["한국어", "영어", "한국어+영어 혼용"])
 
+        # ── 첫 3초 후킹 문구 (Hook 템플릿) ──
+        st.markdown("---")
+        st.markdown('<div class="card"><div class="card-label">HOOK</div><h3>🪝 첫 3초 후킹 문구</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">시청자를 멈추게 하는 첫 3초! AI가 콘텐츠 목적에 맞는 후킹 문구 5개를 제안합니다.</div>', unsafe_allow_html=True)
+
+        cmode = st.session_state.content_mode
+        if st.button("🪝 후킹 문구 5개 생성", key="gen_hooks"):
+            with st.spinner("후킹 문구 생성 중..."):
+                hook_result = call_claude(
+                    "숏폼 후킹 전문가. 번호 매기지 말고 한 줄씩만 출력. 각 줄이 하나의 후킹 문구.",
+                    f"제품: {pn}\n설명: {product_desc or '없음'}\n카테고리: {st.session_state.coupang_category or '일반'}\n콘텐츠 목적: {cmode}\n\n이 제품의 숏폼 영상 '첫 3초 후킹 문구' 5개를 만들어줘.\n\n조건:\n- '{cmode}' 스타일에 맞게 작성\n- 시청자가 스크롤을 멈추고 보게 만드는 한 줄\n- 15자 이내, 짧고 강렬하게\n- 이모지 1개 포함 가능\n- 궁금증/충격/공감/유머 활용\n- 숫자 매기지 말고 문구만 출력"
+                )
+                if hook_result:
+                    hooks = [h.strip().lstrip("0123456789.-) ") for h in hook_result.strip().split("\n") if h.strip()]
+                    st.session_state.hook_suggestions = hooks[:5]
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 후킹 문구 생성 불가</div>', unsafe_allow_html=True)
+
+        if st.session_state.hook_suggestions:
+            st.markdown(f"**`{cmode}` 스타일 후킹 문구:**")
+            for hi, hook in enumerate(st.session_state.hook_suggestions):
+                hc1, hc2 = st.columns([5, 1])
+                with hc1:
+                    st.markdown(f"&nbsp;&nbsp;`{hook}`")
+                with hc2:
+                    if st.button("📌 적용", key=f"hook_{hi}", use_container_width=True):
+                        st.session_state.selected_hook = hook
+                        # 스크립트 첫 줄에 후킹 문구 삽입
+                        if st.session_state.script:
+                            st.session_state.script = hook + "\n\n" + st.session_state.script
+                        else:
+                            st.session_state.script = hook + "\n\n"
+                        st.success(f"✅ 후킹 문구 적용됨: '{hook}'")
+                        st.rerun()
+
+            if st.session_state.selected_hook:
+                st.markdown(f'<div class="info-box">현재 적용된 훅: <strong>{st.session_state.selected_hook}</strong></div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
         if st.button("🤖 AI 스크립트 생성"):
             with st.spinner("생성 중..."):
+                cmode = st.session_state.content_mode
+                mode_guide = {
+                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도",
+                    "구매전환형": "할인·한정·혜택 강조, 즉시 구매 촉진",
+                    "리뷰형": "실제 사용 경험 중심, 장점·단점 솔직하게",
+                    "비교형": "경쟁 제품 대비 차별점 강조, 데이터 활용",
+                    "문제해결형": "일상 불편함 → 이 제품이 해결, before/after",
+                    "바이럴형": "밈·유머·감성 자극, 공유하고 싶은 콘텐츠",
+                }
+                hook_instruction = ""
+                if st.session_state.selected_hook:
+                    hook_instruction = f"\n첫 문장은 반드시 이것으로 시작해: '{st.session_state.selected_hook}'"
                 result = call_claude(
                     "숏폼 광고 카피라이터. 스크립트만 출력.",
-                    f"제품:{pn}\n설명:{product_desc or '없음'}\n톤:{tone}\n언어:{lang}\n길이:{target_dur}초\n조건:첫 문장 강렬, 구매유도, 짧은 문장"
+                    f"제품:{pn}\n설명:{product_desc or '없음'}\n톤:{tone}\n언어:{lang}\n길이:{target_dur}초\n콘텐츠 목적:{cmode}\n스타일 가이드:{mode_guide.get(cmode, '')}\n조건:'{cmode}' 목적에 맞게, 첫 문장 강렬, 구매유도, 짧은 문장{hook_instruction}"
                 )
                 if result:
                     st.session_state.script = result
@@ -1069,13 +1169,24 @@ with tab_dl:
     st.markdown('<div class="card"><div class="card-label">STEP 06</div><h3>💾 완성 영상 다운로드</h3></div>', unsafe_allow_html=True)
 
     pn = product_name or st.session_state.coupang_product or "제품"
+    aff_link = st.session_state.coupang_affiliate_link
 
     dc1, dc2 = st.columns(2)
     with dc1:
         auto_title = st.text_input("제목", value=f"{pn} 리뷰 | 이거 진짜 괜찮네요 #shorts")
     with dc2:
         auto_tags = st.text_input("해시태그", value=st.session_state.coupang_hashtags or f"#{pn} #숏폼 #리뷰 #shorts #viral #fyp")
-    auto_desc = st.text_area("설명", value=st.session_state.coupang_desc or f"{product_desc or ''}\n\n{auto_tags}", height=80)
+
+    # 설명란 기본값 구성 (쿠팡 파트너스 링크 자동 포함)
+    desc_base = st.session_state.coupang_desc or f"{product_desc or ''}"
+    if aff_link and aff_link not in desc_base:
+        desc_default = f"{desc_base}\n\n🛒 쿠팡에서 확인하기 👇\n{aff_link}\n\n{auto_tags}"
+    else:
+        desc_default = f"{desc_base}\n\n{auto_tags}" if desc_base else auto_tags
+    auto_desc = st.text_area("설명", value=desc_default, height=100)
+
+    if aff_link:
+        st.markdown(f'<div class="info-box">🔗 쿠팡 파트너스 링크가 설명란에 자동 포함되었습니다.</div>', unsafe_allow_html=True)
 
     st.markdown("### 📥 플랫폼별 다운로드")
     video_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
