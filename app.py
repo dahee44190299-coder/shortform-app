@@ -96,6 +96,24 @@ div[data-testid="stExpander"] *{color:#1a1a1a!important;}
 .demo-banner{background:#fff0f1;border:1px solid #fcc;border-radius:12px;padding:12px 16px;font-size:.85rem;color:#c00!important;margin:8px 0;font-weight:600;text-align:center;}
 .copy-box{background:#f7f8fa;border:1px solid #e5e8eb;border-radius:12px;padding:14px 18px;font-size:.85rem;color:#1a1a1a!important;margin:8px 0;white-space:pre-wrap;word-break:break-all;}
 hr{border-color:#e5e8eb!important;}
+/* ── UI/UX 개선: 공통 토큰 ── */
+.ux-card{background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;padding:24px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);}
+.ux-card-title{font-size:.8rem;font-weight:700;color:#FF6B35!important;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;}
+.ux-card h4{font-size:1rem;font-weight:700;color:#1A1A2E!important;margin:0 0 12px;}
+.ux-sub{color:#6B7280!important;font-size:.82rem;}
+/* 사이드바 STEP 강조 */
+[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label{border-radius:8px;padding:4px 8px;margin:2px 0;transition:background .15s;}
+/* 다음 버튼 (primary) */
+button[kind="primary"]{background:#FF6B35!important;color:#fff!important;border:none!important;border-radius:8px!important;font-weight:700!important;}
+button[kind="primary"]:hover{background:#E55A2B!important;color:#fff!important;}
+/* 이전 버튼 (secondary) */
+button[kind="secondary"]{background:#fff!important;color:#1A1A2E!important;border:1px solid #E5E7EB!important;border-radius:8px!important;font-weight:600!important;}
+button[kind="secondary"]:hover{background:#F7F8FA!important;color:#1A1A2E!important;}
+/* 최적화 카드 */
+.opt-card{background:#FFFFFF;border:1px solid #E5E7EB;border-radius:12px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.06);height:100%;}
+.opt-card-icon{font-size:1.6rem;margin-bottom:4px;}
+.opt-card-title{font-size:.9rem;font-weight:700;color:#1A1A2E!important;margin:4px 0;}
+.opt-card-desc{font-size:.78rem;color:#6B7280!important;margin-bottom:8px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1406,6 +1424,16 @@ with st.sidebar:
     st.markdown("### 🎬 숏폼 자동화")
     st.markdown("---")
     _step_labels = ["1. 소스 선택", "2. 클립 편집", "3. 자막 + 음성", "4. 미리보기 + 다운로드"]
+    # 사이드바 현재 STEP 강조 CSS 동적 주입
+    _cs = st.session_state.current_step
+    _sidebar_css = '<style>'
+    for _si in range(4):
+        if _si + 1 == _cs:
+            _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}){{background:#FF6B35!important;border-radius:8px;}} [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span{{color:#fff!important;font-weight:700!important;}}'
+        elif _si + 1 < _cs:
+            _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span::before{{content:"✅ ";}}'
+    _sidebar_css += '</style>'
+    st.markdown(_sidebar_css, unsafe_allow_html=True)
     _selected_step = st.radio("제작 단계", _step_labels,
                               index=st.session_state.current_step - 1,
                               key="_nav_step")
@@ -1428,14 +1456,29 @@ with st.sidebar:
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
 
 # ── 스텝 진행 표시 (4단계 동적) ─────────────────────────────────
-_step_names = ["🔍 소스 선택", "🎬 클립 편집", "🎙️ 자막+음성", "⬇️ 미리보기"]
-_step_html = '<div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0 12px;font-size:.82rem;font-weight:600;color:#8b95a1;flex-wrap:wrap;">'
-for _si, _sname in enumerate(_step_names):
-    _bg = "#1a1a1a" if _si + 1 == st.session_state.current_step else "#f2f3f5"
-    _fg = "#fff" if _si + 1 == st.session_state.current_step else "#8b95a1"
-    _step_html += f'<span style="background:{_bg};color:{_fg};padding:4px 12px;border-radius:20px;">{_sname}</span>'
-    if _si < len(_step_names) - 1:
-        _step_html += '<span style="color:#ccc;">→</span>'
+_step_labels = ["제품설정", "클립편집", "영상생성", "다운로드"]
+_step_html = '<div style="display:flex;align-items:center;justify-content:center;gap:0;padding:12px 0 16px;">'
+for _si, _slabel in enumerate(_step_labels):
+    _num = _si + 1
+    _is_current = _num == st.session_state.current_step
+    _is_done = _num < st.session_state.current_step
+    if _is_current:
+        _circle_bg = "#FF6B35"; _circle_fg = "#fff"; _txt_col = "#FF6B35"; _txt_weight = "700"
+    elif _is_done:
+        _circle_bg = "#4CAF50"; _circle_fg = "#fff"; _txt_col = "#4CAF50"; _txt_weight = "600"
+    else:
+        _circle_bg = "#E5E7EB"; _circle_fg = "#6B7280"; _txt_col = "#6B7280"; _txt_weight = "500"
+    _step_html += (
+        f'<div style="display:flex;flex-direction:column;align-items:center;min-width:70px;">'
+        f'<div style="width:32px;height:32px;border-radius:50%;background:{_circle_bg};color:{_circle_fg};'
+        f'display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;">'
+        f'{"✓" if _is_done else _num}</div>'
+        f'<span style="font-size:.75rem;font-weight:{_txt_weight};color:{_txt_col};margin-top:4px;">{_slabel}</span>'
+        f'</div>'
+    )
+    if _si < len(_step_labels) - 1:
+        _line_col = "#4CAF50" if _is_done else "#E5E7EB"
+        _step_html += f'<div style="flex:1;height:2px;background:{_line_col};margin:0 4px;align-self:flex-start;margin-top:16px;min-width:30px;"></div>'
 _step_html += '</div>'
 st.markdown(_step_html, unsafe_allow_html=True)
 
@@ -1446,12 +1489,12 @@ def _render_nav_buttons():
     nav_prev, _, nav_next = st.columns([1, 3, 1])
     with nav_prev:
         if st.session_state.current_step > 1:
-            if st.button("← 이전 단계", key=f"prev_{st.session_state.current_step}"):
+            if st.button("← 이전 단계", key=f"prev_{st.session_state.current_step}", type="secondary"):
                 st.session_state.current_step -= 1
                 st.rerun()
     with nav_next:
         if st.session_state.current_step < 4:
-            if st.button("다음 단계 →", key=f"next_{st.session_state.current_step}"):
+            if st.button("다음 단계 →", key=f"next_{st.session_state.current_step}", type="primary"):
                 st.session_state.current_step += 1
                 st.rerun()
 
@@ -1460,48 +1503,10 @@ def _render_nav_buttons():
 # render_step1: 🔍 소스 선택
 # ═════════════════════════════════════════════════════════════════
 def render_step1():
-    st.markdown('<div class="card"><div class="card-label">STEP 01</div><h3>🔍 소스 선택 — 제품 정보 & 영상 소스</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 01</div><h4>소스 선택</h4><p class="ux-sub">영상 소스를 선택하고, 필요 시 제품 정보를 입력하세요</p></div>', unsafe_allow_html=True)
 
-    # ── 제품 기본 정보 (항상 표시) ──
-    st.markdown("#### 📦 제품 기본 정보")
-    s1c1, s1c2 = st.columns(2)
-    with s1c1:
-        product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
-    with s1c2:
-        product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
-
-    content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
-    mode_desc = {
-        "클릭유도형": "궁금증·충격으로 클릭 유도",
-        "구매전환형": "구매 결정을 촉진",
-        "리뷰형": "사용 후기·장단점 중심",
-        "비교형": "경쟁 제품과 비교 분석",
-        "문제해결형": "문제 제시 → 해결",
-        "바이럴형": "공유·밈·감성 자극",
-    }
-    s1m1, s1m2 = st.columns([2, 3])
-    with s1m1:
-        st.session_state.content_mode = st.selectbox(
-            "🎯 콘텐츠 목적",
-            content_modes,
-            index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
-            help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
-        )
-        st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
-    with s1m2:
-        st.markdown("**🔗 쿠팡 파트너스 링크**")
-        st.session_state.coupang_affiliate_link = st.text_input(
-            "제휴 링크 URL",
-            value=st.session_state.coupang_affiliate_link,
-            placeholder="https://link.coupang.com/...",
-            help="유튜브/인스타 설명란에 자동 삽입됩니다."
-        )
-        if st.session_state.coupang_affiliate_link:
-            st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # ── source_type 라디오 ──
+    # ── 영상 소스 (메인) ──
+    st.markdown("#### 🎬 영상 소스")
     _src_opts = ["🛒 쿠팡 URL", "🖼️ 이미지 업로드", "🎥 영상 직접 업로드"]
     _src_map = {"🛒 쿠팡 URL": "URL", "🖼️ 이미지 업로드": "이미지", "🎥 영상 직접 업로드": "영상"}
     _src_reverse = {"URL": "🛒 쿠팡 URL", "이미지": "🖼️ 이미지 업로드", "영상": "🎥 영상 직접 업로드"}
@@ -1510,7 +1515,44 @@ def render_step1():
                         index=_src_opts.index(_cur_src_label) if _cur_src_label in _src_opts else 0)
     st.session_state.source_type = _src_map[_src_sel]
 
-    st.markdown("---")
+    # ── 제품 정보 + 쿠팡 링크 (접힌 상태) ──
+    _exp_label = "📦 제품 기본 정보 & 쿠팡 링크"
+    if st.session_state.get("coupang_product"):
+        _exp_label += f"  —  ✅ {st.session_state.coupang_product}"
+    with st.expander(_exp_label, expanded=False):
+        s1c1, s1c2 = st.columns(2)
+        with s1c1:
+            product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
+        with s1c2:
+            product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
+
+        content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
+        mode_desc = {
+            "클릭유도형": "궁금증·충격으로 클릭 유도",
+            "구매전환형": "구매 결정을 촉진",
+            "리뷰형": "사용 후기·장단점 중심",
+            "비교형": "경쟁 제품과 비교 분석",
+            "문제해결형": "문제 제시 → 해결",
+            "바이럴형": "공유·밈·감성 자극",
+        }
+        st.session_state.content_mode = st.selectbox(
+            "🎯 콘텐츠 목적",
+            content_modes,
+            index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
+            help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
+        )
+        st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
+        st.markdown("---")
+        st.markdown("**🔗 쿠팡 제휴 링크**")
+        st.session_state.coupang_affiliate_link = st.text_input(
+            "제휴 링크 URL",
+            value=st.session_state.coupang_affiliate_link,
+            placeholder="https://link.coupang.com/...",
+            help="유튜브/인스타 설명란에 자동 삽입됩니다.",
+            label_visibility="collapsed"
+        )
+        if st.session_state.coupang_affiliate_link:
+            st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
 
     # ═══════ A) 쿠팡 URL ═══════
     if st.session_state.source_type == "URL":
@@ -1985,7 +2027,7 @@ def render_step1():
 def render_step2():
     target_dur = st.session_state.get("_w_target_dur", 30)
 
-    st.markdown('<div class="card"><div class="card-label">STEP 02</div><h3>🎬 클립 편집 — 순서 조정 & 용도 태그</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 02</div><h4>클립 편집</h4><p class="ux-sub">순서 조정 & 용도 태그</p></div>', unsafe_allow_html=True)
 
     if st.session_state.clips:
         clips = st.session_state.clips
@@ -2065,22 +2107,25 @@ def render_step3():
     target_dur = st.session_state.get("_w_target_dur", 30)
     crop_ratio = st.session_state.get("_w_crop_ratio", "9:16 세로형 (숏폼)")
 
-    st.markdown('<div class="card"><div class="card-label">STEP 03</div><h3>🎙️ 자막 + 음성 — 제목 · 스크립트 · TTS · 자막 · BGM · 조립</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 03</div><h4>영상 생성</h4><p class="ux-sub">제목 · 스크립트 · TTS · 자막 · BGM · 조립</p></div>', unsafe_allow_html=True)
 
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
 
     # ═══════ 🎯 조회수 최적화 패널 ═══════
-    st.markdown('<div class="card"><div class="card-label">OPTIMIZE</div><h3>🎯 조회수 최적화</h3></div>', unsafe_allow_html=True)
-    st.markdown('<div class="info-box">조회수와 완시율을 높이기 위한 자동 최적화 옵션입니다. 영상 조립 시 자동 적용됩니다.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">OPTIMIZE</div><h4>🎯 조회수 최적화</h4><p class="ux-sub">조회수와 완시율을 높이기 위한 자동 최적화 옵션입니다. 영상 조립 시 자동 적용됩니다.</p></div>', unsafe_allow_html=True)
 
     opt_c1, opt_c2, opt_c3 = st.columns(3)
     with opt_c1:
+        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
+        st.markdown("**🎯 Hook A/B 테스트**")
+        st.caption("첫 3초만 다른 영상 2~3개 자동 생성")
         st.session_state.hook_test_enabled = st.checkbox(
-            "🪝 Hook A/B 테스트",
+            "Hook A/B 활성화",
             value=st.session_state.hook_test_enabled,
             help="같은 제품으로 첫 3초만 다른 영상 2~3개를 자동 생성합니다.",
-            key="opt_hook_test"
+            key="opt_hook_test",
+            label_visibility="collapsed"
         )
         if st.session_state.hook_test_enabled:
             if not st.session_state.clips:
@@ -2092,24 +2137,35 @@ def render_step3():
                     index=0 if st.session_state.hook_version_count == 2 else 1
                 )
                 st.caption("A: 문제 제시 / B: 놀람 / C: 손해 회피")
+        st.markdown('</div>', unsafe_allow_html=True)
     with opt_c2:
+        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
+        st.markdown("**⚡ Pattern Interrupt**")
+        st.caption("중간에 시각 변화를 자동 삽입")
         st.session_state.pattern_interrupt_enabled = st.checkbox(
-            "⚡ Pattern Interrupt",
+            "Pattern Interrupt 활성화",
             value=st.session_state.pattern_interrupt_enabled,
             help="영상 중간에 zoom, jump cut, 키워드 강조 등 시각 변화를 자동 삽입합니다.",
-            key="opt_pattern_interrupt"
+            key="opt_pattern_interrupt",
+            label_visibility="collapsed"
         )
         if st.session_state.pattern_interrupt_enabled:
             st.caption("10%: zoom / 25%: cut / 40%: 강조 / 60%: flash")
+        st.markdown('</div>', unsafe_allow_html=True)
     with opt_c3:
+        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
+        st.markdown("**📈 Retention Booster**")
+        st.caption("완시율 극대화 자동 최적화")
         st.session_state.retention_booster_enabled = st.checkbox(
-            "📈 Retention Booster",
+            "Retention Booster 활성화",
             value=st.session_state.retention_booster_enabled,
             help="완시율 최적화: 첫 5초 자막 밀도 증가, 2초 시각 변화, Benefit 강조, CTA 타이밍 최적화",
-            key="opt_retention_booster"
+            key="opt_retention_booster",
+            label_visibility="collapsed"
         )
         if st.session_state.retention_booster_enabled:
             st.caption("자막 밀도 + 시각 변화 + Benefit 강조 + CTA 최적화")
+        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     # ── AI 제목 9개 생성 (쿠팡 전용) ──
@@ -2693,7 +2749,7 @@ def render_step3():
 # render_step4: ⬇️ 미리보기 + 다운로드
 # ═════════════════════════════════════════════════════════════════
 def render_step4():
-    st.markdown('<div class="card"><div class="card-label">STEP 04</div><h3>⬇️ 미리보기 + 다운로드 — 해시태그 · 설명란 · 썸네일 · 다운로드</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 04</div><h4>다운로드</h4><p class="ux-sub">해시태그 · 설명란 · 썸네일 · 다운로드</p></div>', unsafe_allow_html=True)
 
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
