@@ -3,6 +3,7 @@ import os, json, subprocess, tempfile, time, re, requests, glob as globmod, rand
 from pathlib import Path
 from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
+import project_store
 
 # ── 크로스 플랫폼 임시 디렉토리 ──────────────────────────────────────
 TMPDIR = tempfile.gettempdir()
@@ -53,6 +54,69 @@ def generate_silent_audio(duration_sec, output_path):
         return r.returncode == 0 and os.path.exists(output_path)
     except:
         return False
+
+
+# ── TTS 엔진 함수 ─────────────────────────────────────────────────
+def generate_tts_clova(text, output_path, speaker="nara", speed=0):
+    """네이버 클로바 TTS API 호출. 성공 시 True."""
+    clova_id = os.environ.get("CLOVA_TTS_CLIENT_ID", "")
+    clova_sec = os.environ.get("CLOVA_TTS_CLIENT_SECRET", "")
+    if not clova_id or not clova_sec:
+        return False
+    try:
+        resp = requests.post(
+            "https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts",
+            headers={"X-NCP-APIGW-API-KEY-ID": clova_id,
+                     "X-NCP-APIGW-API-KEY": clova_sec,
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            data={"speaker": speaker, "text": text, "speed": str(speed), "format": "mp3"},
+            timeout=30
+        )
+        if resp.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(resp.content)
+            return True
+    except:
+        pass
+    return False
+
+
+def generate_tts_elevenlabs(text, output_path, voice_id="21m00Tcm4TlvDq8ikWAM", speed=1.0):
+    """ElevenLabs TTS API 호출. 성공 시 True."""
+    el_key = os.environ.get("ELEVENLABS_API_KEY", "")
+    if not el_key:
+        return False
+    try:
+        resp = requests.post(
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
+            headers={"xi-api-key": el_key, "Content-Type": "application/json"},
+            json={"text": text, "model_id": "eleven_multilingual_v2",
+                  "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                  "speed": speed},
+            timeout=60
+        )
+        if resp.status_code == 200:
+            with open(output_path, "wb") as f:
+                f.write(resp.content)
+            return True
+    except:
+        pass
+    return False
+
+
+def generate_tts_auto(text, output_path, speaker="nara", voice_id="21m00Tcm4TlvDq8ikWAM", speed=1.0):
+    """session_state.tts_engine 기준으로 자동 분기. 성공 시 True."""
+    import streamlit as _st
+    engine = _st.session_state.get("tts_engine", "elevenlabs")
+    if engine == "elevenlabs":
+        if generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed):
+            return True
+        return generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5))
+    else:
+        if generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5)):
+            return True
+        return generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed)
+
 
 st.set_page_config(page_title="숏폼 자동화 제작기", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
@@ -140,10 +204,171 @@ defaults = {
     # ── 조회수 최적화 ──
     "hook_test_enabled":False, "hook_version_count":2, "hook_versions":[],
     "pattern_interrupt_enabled":True, "retention_booster_enabled":True,
+    # ── TTS 엔진 ──
+    "tts_engine":"elevenlabs",  # "clova" or "elevenlabs"
+    # ── 프로젝트 / 템플릿 ──
+    "app_phase":"project_select",  # "project_select" | "template_select" | "pipeline"
+    "active_project_id":"",
+    "active_template":"",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# ── 템플릿 정의 ──────────────────────────────────────────────────
+TEMPLATES = {
+    "coupang_shorts": {
+        "name": "🛒 쿠팡 쇼츠",
+        "desc": "쿠팡 파트너스 특화. 3초 Hook + 제품 소개 + CTA",
+        "hook_type": "problem",
+        "cta_position": "하단",
+        "retention_booster": True,
+        "pattern_interrupt": True,
+        "tts_engine": "elevenlabs",
+        "content_mode": "구매전환형",
+    },
+    "shopping_promo": {
+        "name": "🏪 쇼핑몰 제품 홍보",
+        "desc": "일반 이커머스 제품 홍보용. 혜택 강조 + 구매 유도",
+        "hook_type": "benefit",
+        "cta_position": "하단",
+        "retention_booster": True,
+        "pattern_interrupt": False,
+        "tts_engine": "elevenlabs",
+        "content_mode": "클릭유도형",
+    },
+    "tiktok_review": {
+        "name": "📱 틱톡 리뷰",
+        "desc": "솔직 리뷰 스타일. 놀람 Hook + 사용 후기",
+        "hook_type": "surprise",
+        "cta_position": "하단",
+        "retention_booster": True,
+        "pattern_interrupt": True,
+        "tts_engine": "clova",
+        "content_mode": "리뷰형",
+    },
+    "problem_solving": {
+        "name": "🔧 문제 해결 광고",
+        "desc": "문제 제시 → 해결 구조. 공감 유도 + 제품 솔루션",
+        "hook_type": "problem",
+        "cta_position": "하단",
+        "retention_booster": True,
+        "pattern_interrupt": True,
+        "tts_engine": "elevenlabs",
+        "content_mode": "문제해결형",
+    },
+}
+
+
+# ── 프로젝트 선택 화면 ──────────────────────────────────────────
+def render_project_select():
+    st.markdown('<div class="ux-card"><div class="ux-card-title">HOME</div><h4>📁 프로젝트 선택</h4><p class="ux-sub">프로젝트를 선택하거나 새로 만들어주세요</p></div>', unsafe_allow_html=True)
+
+    # 새 프로젝트 생성
+    with st.expander("➕ 새 프로젝트 만들기", expanded=not bool(project_store.list_projects())):
+        _np_name = st.text_input("프로젝트 이름", placeholder="예: 배수구 냄새 제거기", key="_new_prj_name")
+        _np_product = st.text_input("제품명 (선택)", placeholder="예: 만능 배수구 클리너", key="_new_prj_product")
+        _np_cat = st.selectbox("카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "기타"], key="_new_prj_cat")
+        if st.button("✅ 프로젝트 생성", key="btn_create_prj", type="primary"):
+            if _np_name.strip():
+                pid = project_store.create_project(_np_name.strip(), product_name=_np_product, category=_np_cat)
+                st.session_state.active_project_id = pid
+                st.session_state.app_phase = "template_select"
+                if _np_product:
+                    st.session_state.coupang_product = _np_product
+                if _np_cat:
+                    st.session_state.coupang_category = _np_cat
+                st.rerun()
+            else:
+                st.warning("프로젝트 이름을 입력해주세요")
+
+    # 기존 프로젝트 목록
+    projects = project_store.list_projects()
+    if projects:
+        st.markdown("#### 📋 기존 프로젝트")
+        for prj in projects:
+            col_info, col_open, col_del = st.columns([4, 1, 1])
+            with col_info:
+                _tpl = prj.get("template", "")
+                _tpl_name = TEMPLATES.get(_tpl, {}).get("name", _tpl) if _tpl else "미선택"
+                st.markdown(f"**{prj['name']}**  \n📅 {prj['created_at'][:10]}  ·  🎬 영상 {prj['video_count']}개  ·  📋 {_tpl_name}")
+            with col_open:
+                if st.button("열기", key=f"open_{prj['id']}", type="primary"):
+                    st.session_state.active_project_id = prj['id']
+                    pdata = project_store.get_project(prj['id'])
+                    if pdata:
+                        if pdata.get("product_name"):
+                            st.session_state.coupang_product = pdata["product_name"]
+                        if pdata.get("category"):
+                            st.session_state.coupang_category = pdata["category"]
+                        if pdata.get("template"):
+                            st.session_state.active_template = pdata["template"]
+                            _apply_template(pdata["template"])
+                            st.session_state.app_phase = "pipeline"
+                            st.session_state.current_step = 1
+                        else:
+                            st.session_state.app_phase = "template_select"
+                    st.rerun()
+            with col_del:
+                if st.button("🗑️", key=f"del_{prj['id']}"):
+                    project_store.delete_project(prj['id'])
+                    st.rerun()
+    elif not projects:
+        st.info("아직 프로젝트가 없습니다. 위에서 새로 만들어주세요!")
+
+
+# ── 템플릿 선택 화면 ──────────────────────────────────────────
+def _apply_template(template_key):
+    """템플릿 설정을 session_state에 적용."""
+    tpl = TEMPLATES.get(template_key)
+    if not tpl:
+        return
+    st.session_state.active_template = template_key
+    st.session_state.content_mode = tpl.get("content_mode", "클릭유도형")
+    st.session_state.pattern_interrupt_enabled = tpl.get("pattern_interrupt", True)
+    st.session_state.retention_booster_enabled = tpl.get("retention_booster", True)
+    st.session_state.tts_engine = tpl.get("tts_engine", "elevenlabs")
+    st.session_state.cta_position = tpl.get("cta_position", "하단")
+
+
+def render_template_select():
+    st.markdown('<div class="ux-card"><div class="ux-card-title">TEMPLATE</div><h4>📋 템플릿 선택</h4><p class="ux-sub">영상 구조를 선택하면 자동으로 설정됩니다</p></div>', unsafe_allow_html=True)
+
+    # 현재 프로젝트 정보
+    pid = st.session_state.active_project_id
+    pdata = project_store.get_project(pid) if pid else None
+    if pdata:
+        st.markdown(f"**프로젝트:** {pdata['name']}")
+
+    cols = st.columns(2)
+    tpl_keys = list(TEMPLATES.keys())
+    for i, tkey in enumerate(tpl_keys):
+        tpl = TEMPLATES[tkey]
+        with cols[i % 2]:
+            st.markdown(f'<div class="opt-card">', unsafe_allow_html=True)
+            st.markdown(f"**{tpl['name']}**")
+            st.caption(tpl['desc'])
+            _settings = []
+            if tpl.get("pattern_interrupt"):
+                _settings.append("⚡ PI")
+            if tpl.get("retention_booster"):
+                _settings.append("📈 RB")
+            _settings.append(f"🔊 {tpl.get('tts_engine', 'elevenlabs')}")
+            st.markdown(f"설정: {' · '.join(_settings)}")
+            if st.button(f"선택 →", key=f"tpl_{tkey}", type="primary"):
+                _apply_template(tkey)
+                if pid:
+                    project_store.update_project(pid, template=tkey)
+                st.session_state.app_phase = "pipeline"
+                st.session_state.current_step = 1
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+    if st.button("← 프로젝트 목록으로", key="back_to_projects", type="secondary"):
+        st.session_state.app_phase = "project_select"
+        st.rerun()
+
 
 # ── 카테고리별 해시태그 DB ─────────────────────────────────────────
 CATEGORY_HASHTAGS = {
@@ -549,11 +774,12 @@ def build_pattern_interrupt_filters(total_dur, hook_dur=3.0):
     if total_dur <= hook_dur + 1:
         return filters
     body_dur = total_dur - hook_dur
-    # 10% 지점: zoom in (1.15x, 0.5초간)
+    # 10% 지점: zoom in (1.15x, 0.5초간) — scale+crop 기반 (동영상 스트림 호환)
     t_zoom = hook_dur + body_dur * 0.10
+    z = 1.15
     filters.append(
-        f"zoompan=z='if(between(in_time,{t_zoom:.1f},{t_zoom+0.5:.1f}),1.15,1)'"
-        f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=1080x1920:fps=30"
+        f"scale=iw*{z}:-1:enable='between(t,{t_zoom:.1f},{t_zoom+0.5:.1f})',"
+        f"crop=iw/{z}:ih/{z}:enable='between(t,{t_zoom:.1f},{t_zoom+0.5:.1f})'"
     )
     # 25% 지점: 0.15초 jump cut (밝기 깜빡임으로 시뮬레이션)
     t_cut = hook_dur + body_dur * 0.25
@@ -700,24 +926,12 @@ def assemble_hook_versions(clips, body_subs, body_tts_path, target_dur, crop_rat
     for hook_info in hooks:
         ver_name = hook_info["name"]
         hook_text = hook_info["hook_text"]
-        # 1. Hook TTS 생성 (기존 TTS 함수 재사용 시도)
+        # 1. Hook TTS 생성 (generate_tts_auto 사용)
         hook_tts_out = tmp / f"hook_tts_{ver_name}.mp3"
         hook_tts_generated = False
-        # ElevenLabs TTS 시도
-        if has_key("ELEVENLABS_API_KEY"):
-            try:
-                from elevenlabs_tts import generate_elevenlabs_tts
-                if generate_elevenlabs_tts(hook_text, str(hook_tts_out)):
-                    hook_tts_generated = True
-            except:
-                pass
-        # Clova TTS fallback
-        if not hook_tts_generated and has_key("CLOVA_TTS_CLIENT_ID"):
-            try:
-                result = generate_clova_tts(hook_text, str(hook_tts_out))
-                if result:
-                    hook_tts_generated = True
-            except:
+        try:
+            hook_tts_generated = generate_tts_auto(hook_text, str(hook_tts_out))
+        except:
                 pass
 
         # 2. TTS 병합 (hook_tts + body_tts)
@@ -1423,26 +1637,42 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### 🎬 숏폼 자동화")
     st.markdown("---")
-    _step_labels = ["1. 소스 선택", "2. 클립 편집", "3. 자막 + 음성", "4. 미리보기 + 다운로드"]
-    # 사이드바 현재 STEP 강조 CSS 동적 주입
-    _cs = st.session_state.current_step
-    _sidebar_css = '<style>'
-    for _si in range(4):
-        if _si + 1 == _cs:
-            _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}){{background:#FF6B35!important;border-radius:8px;}} [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span{{color:#fff!important;font-weight:700!important;}}'
-        elif _si + 1 < _cs:
-            _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span::before{{content:"✅ ";}}'
-    _sidebar_css += '</style>'
-    st.markdown(_sidebar_css, unsafe_allow_html=True)
-    _selected_step = st.radio("제작 단계", _step_labels,
-                              index=st.session_state.current_step - 1,
-                              key="_nav_step")
-    st.session_state.current_step = _step_labels.index(_selected_step) + 1
-    st.markdown("---")
-    with st.expander("✂️ 영상 설정", expanded=False):
-        target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5, key="_w_target_dur")
-        crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"], key="_w_crop_ratio")
-    st.markdown("---")
+
+    # 프로젝트 정보 표시 (활성 프로젝트가 있을 때)
+    if st.session_state.active_project_id:
+        _prj_data = project_store.get_project(st.session_state.active_project_id)
+        if _prj_data:
+            st.markdown(f"📁 **{_prj_data['name']}**")
+            _active_tpl = TEMPLATES.get(st.session_state.active_template, {})
+            if _active_tpl:
+                st.caption(f"📋 {_active_tpl.get('name', '')}")
+        if st.button("🏠 프로젝트 목록", key="sidebar_home", use_container_width=True):
+            st.session_state.app_phase = "project_select"
+            st.rerun()
+        st.markdown("---")
+
+    # STEP 네비게이션은 pipeline 단계에서만 표시
+    if st.session_state.app_phase == "pipeline":
+        _step_labels = ["1. 소스 선택", "2. 클립 편집", "3. 자막 + 음성", "4. 미리보기 + 다운로드"]
+        _cs = st.session_state.current_step
+        _sidebar_css = '<style>'
+        for _si in range(4):
+            if _si + 1 == _cs:
+                _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}){{background:#FF6B35!important;border-radius:8px;}} [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span{{color:#fff!important;font-weight:700!important;}}'
+            elif _si + 1 < _cs:
+                _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span::before{{content:"✅ ";}}'
+        _sidebar_css += '</style>'
+        st.markdown(_sidebar_css, unsafe_allow_html=True)
+        _selected_step = st.radio("제작 단계", _step_labels,
+                                  index=st.session_state.current_step - 1,
+                                  key="_nav_step")
+        st.session_state.current_step = _step_labels.index(_selected_step) + 1
+        st.markdown("---")
+        with st.expander("✂️ 영상 설정", expanded=False):
+            target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5, key="_w_target_dur")
+            crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"], key="_w_crop_ratio")
+        st.markdown("---")
+
     with st.expander("🔑 API 연결 상태"):
         for label, env in [
             ("Claude AI", "ANTHROPIC_API_KEY"),
@@ -1455,32 +1685,33 @@ with st.sidebar:
             ok = has_key(env)
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
 
-# ── 스텝 진행 표시 (4단계 동적) ─────────────────────────────────
-_step_labels = ["제품설정", "클립편집", "영상생성", "다운로드"]
-_step_html = '<div style="display:flex;align-items:center;justify-content:center;gap:0;padding:12px 0 16px;">'
-for _si, _slabel in enumerate(_step_labels):
-    _num = _si + 1
-    _is_current = _num == st.session_state.current_step
-    _is_done = _num < st.session_state.current_step
-    if _is_current:
-        _circle_bg = "#FF6B35"; _circle_fg = "#fff"; _txt_col = "#FF6B35"; _txt_weight = "700"
-    elif _is_done:
-        _circle_bg = "#4CAF50"; _circle_fg = "#fff"; _txt_col = "#4CAF50"; _txt_weight = "600"
-    else:
-        _circle_bg = "#E5E7EB"; _circle_fg = "#6B7280"; _txt_col = "#6B7280"; _txt_weight = "500"
-    _step_html += (
-        f'<div style="display:flex;flex-direction:column;align-items:center;min-width:70px;">'
-        f'<div style="width:32px;height:32px;border-radius:50%;background:{_circle_bg};color:{_circle_fg};'
-        f'display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;">'
-        f'{"✓" if _is_done else _num}</div>'
-        f'<span style="font-size:.75rem;font-weight:{_txt_weight};color:{_txt_col};margin-top:4px;">{_slabel}</span>'
-        f'</div>'
-    )
-    if _si < len(_step_labels) - 1:
-        _line_col = "#4CAF50" if _is_done else "#E5E7EB"
-        _step_html += f'<div style="flex:1;height:2px;background:{_line_col};margin:0 4px;align-self:flex-start;margin-top:16px;min-width:30px;"></div>'
-_step_html += '</div>'
-st.markdown(_step_html, unsafe_allow_html=True)
+# ── 스텝 진행 표시 (4단계 동적) — pipeline 단계에서만 ─────────────
+if st.session_state.app_phase == "pipeline":
+    _step_labels_prog = ["제품설정", "클립편집", "영상생성", "다운로드"]
+    _step_html = '<div style="display:flex;align-items:center;justify-content:center;gap:0;padding:12px 0 16px;">'
+    for _si, _slabel in enumerate(_step_labels_prog):
+        _num = _si + 1
+        _is_current = _num == st.session_state.current_step
+        _is_done = _num < st.session_state.current_step
+        if _is_current:
+            _circle_bg = "#FF6B35"; _circle_fg = "#fff"; _txt_col = "#FF6B35"; _txt_weight = "700"
+        elif _is_done:
+            _circle_bg = "#4CAF50"; _circle_fg = "#fff"; _txt_col = "#4CAF50"; _txt_weight = "600"
+        else:
+            _circle_bg = "#E5E7EB"; _circle_fg = "#6B7280"; _txt_col = "#6B7280"; _txt_weight = "500"
+        _step_html += (
+            f'<div style="display:flex;flex-direction:column;align-items:center;min-width:70px;">'
+            f'<div style="width:32px;height:32px;border-radius:50%;background:{_circle_bg};color:{_circle_fg};'
+            f'display:flex;align-items:center;justify-content:center;font-size:.85rem;font-weight:700;">'
+            f'{"✓" if _is_done else _num}</div>'
+            f'<span style="font-size:.75rem;font-weight:{_txt_weight};color:{_txt_col};margin-top:4px;">{_slabel}</span>'
+            f'</div>'
+        )
+        if _si < len(_step_labels_prog) - 1:
+            _line_col = "#4CAF50" if _is_done else "#E5E7EB"
+            _step_html += f'<div style="flex:1;height:2px;background:{_line_col};margin:0 4px;align-self:flex-start;margin-top:16px;min-width:30px;"></div>'
+    _step_html += '</div>'
+    st.markdown(_step_html, unsafe_allow_html=True)
 
 
 # ── 이전/다음 네비 버튼 헬퍼 ──────────────────────────────────
@@ -2367,9 +2598,25 @@ def render_step3():
     st.markdown("---")
     st.markdown('<div class="card"><div class="card-label">TTS</div><h3>🎙️ TTS 음성 생성</h3></div>', unsafe_allow_html=True)
 
+    # ── 🔊 음성 생성 엔진 선택 ──
+    _has_clova = has_key("CLOVA_TTS_CLIENT_ID")
+    _has_el = has_key("ELEVENLABS_API_KEY")
+    _engine_opts = ["🌍 ElevenLabs (자연스럽고 감정 풍부)", "🇰🇷 네이버 클로바 (안정적, 한국어 특화)"]
+    _engine_map = {"🌍 ElevenLabs (자연스럽고 감정 풍부)": "elevenlabs", "🇰🇷 네이버 클로바 (안정적, 한국어 특화)": "clova"}
+    _engine_reverse = {"elevenlabs": _engine_opts[0], "clova": _engine_opts[1]}
+    _default_engine = st.session_state.tts_engine
+    if not _has_el and _has_clova:
+        _default_engine = "clova"
+    elif _has_el:
+        _default_engine = "elevenlabs"
+    _cur_label = _engine_reverse.get(_default_engine, _engine_opts[0])
+    _sel_engine = st.radio("🔊 음성 생성 엔진 선택", _engine_opts, horizontal=True,
+                           index=_engine_opts.index(_cur_label) if _cur_label in _engine_opts else 0,
+                           key="_w_tts_engine")
+    st.session_state.tts_engine = _engine_map[_sel_engine]
+
     with st.expander("🎙️ TTS 설정", expanded=False):
-        tts_engine = st.radio("TTS 엔진", ["🇰🇷 클로바 (한국어)", "🌍 ElevenLabs"], horizontal=True)
-        if "클로바" in tts_engine:
+        if st.session_state.tts_engine == "clova":
             tts_voice = st.selectbox("클로바 음성", [
                 "nara - 여성 (자연스러움)", "jinho - 남성 (신뢰감)",
                 "nbora - 밝은 여성", "ndain - 차분한 남성",
@@ -2387,60 +2634,36 @@ def render_step3():
         tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
 
     if st.session_state.script:
-        if "클로바" in tts_engine:
-            has_tts_key = has_key("CLOVA_TTS_CLIENT_ID")
+        if st.session_state.tts_engine == "clova":
+            has_tts_key = _has_clova
         else:
-            has_tts_key = has_key("ELEVENLABS_API_KEY")
+            has_tts_key = _has_el
 
         if not has_tts_key:
-            st.markdown(f'<div class="demo-banner">⚠️ {"CLOVA" if "클로바" in tts_engine else "ELEVENLABS"} API 키 미설정 — TTS가 작동하지 않습니다</div>', unsafe_allow_html=True)
+            _eng_name = "CLOVA" if st.session_state.tts_engine == "clova" else "ELEVENLABS"
+            st.markdown(f'<div class="demo-banner">⚠️ {_eng_name} API 키 미설정 — Secrets에 API 키를 등록해주세요</div>', unsafe_allow_html=True)
 
         tts_output_path = os.path.join(TMPDIR, "tts_output.mp3")
 
         if st.button("🎙️ TTS 음성 생성"):
             with st.spinner("음성 생성 중..."):
                 tts_success = False
-
-                if "클로바" in tts_engine:
-                    clova_id = get_api_key("CLOVA_TTS_CLIENT_ID")
-                    clova_sec = get_api_key("CLOVA_TTS_CLIENT_SECRET")
+                if st.session_state.tts_engine == "clova":
                     speaker = tts_voice.split(" - ")[0].strip()
-                    if clova_id and clova_sec:
-                        try:
-                            resp = requests.post(
-                                "https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts",
-                                headers={"X-NCP-APIGW-API-KEY-ID": clova_id, "X-NCP-APIGW-API-KEY": clova_sec, "Content-Type": "application/x-www-form-urlencoded"},
-                                data={"speaker": speaker, "text": st.session_state.script, "speed": str(int((tts_speed - 1) * 5)), "format": "mp3"}
-                            )
-                            if resp.status_code == 200:
-                                with open(tts_output_path, "wb") as f:
-                                    f.write(resp.content)
-                                tts_success = True
-                                st.success("✅ 클로바 TTS 완료!")
-                            else:
-                                st.error(f"클로바 오류: {resp.status_code}")
-                        except Exception as e:
-                            st.error(f"연결 실패: {e}")
+                    tts_success = generate_tts_clova(st.session_state.script, tts_output_path,
+                                                     speaker=speaker, speed=int((tts_speed - 1) * 5))
+                    if tts_success:
+                        st.success("✅ 클로바 TTS 완료!")
+                    elif _has_clova:
+                        st.error("클로바 TTS 실패")
                 else:
-                    el_key = get_api_key("ELEVENLABS_API_KEY")
-                    if el_key and elevenlabs_voice_id:
-                        try:
-                            resp = requests.post(
-                                f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
-                                headers={"xi-api-key": el_key, "Content-Type": "application/json"},
-                                json={"text": st.session_state.script, "model_id": "eleven_multilingual_v2",
-                                      "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-                                      "speed": tts_speed}
-                            )
-                            if resp.status_code == 200:
-                                with open(tts_output_path, "wb") as f:
-                                    f.write(resp.content)
-                                tts_success = True
-                                st.success("✅ ElevenLabs TTS 완료!")
-                            else:
-                                st.error(f"ElevenLabs 오류: {resp.status_code}")
-                        except Exception as e:
-                            st.error(f"연결 실패: {e}")
+                    vid = elevenlabs_voice_id or "21m00Tcm4TlvDq8ikWAM"
+                    tts_success = generate_tts_elevenlabs(st.session_state.script, tts_output_path,
+                                                          voice_id=vid, speed=tts_speed)
+                    if tts_success:
+                        st.success("✅ ElevenLabs TTS 완료!")
+                    elif _has_el:
+                        st.error("ElevenLabs TTS 실패")
 
                 # API 키 없으면 데모 모드: 무음 mp3 생성
                 if not tts_success and not has_tts_key:
@@ -2694,13 +2917,21 @@ def render_step3():
                     stat.text(f"🪝 Hook A/B 테스트: {len(st.session_state.hook_versions)}개 버전 생성 중...")
                     prog.progress(30)
 
-                    hook_results = assemble_hook_versions(
-                        valid, subs, tts_path, target_dur, crop_ratio=ratio,
-                        ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
-                        cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
-                        hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
-                        pattern_interrupt=_pi_on, retention_booster=_rb_on
-                    )
+                    try:
+                        hook_results = assemble_hook_versions(
+                            valid, subs, tts_path, target_dur, crop_ratio=ratio,
+                            ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
+                            cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
+                            hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
+                            pattern_interrupt=_pi_on, retention_booster=_rb_on
+                        )
+                    except subprocess.TimeoutExpired:
+                        st.error("⏱️ Hook 영상 생성 시간 초과 — 클립 수를 줄이거나 목표 길이를 짧게 설정해주세요.")
+                        hook_results = []
+                    except Exception as e:
+                        st.error(f"❌ Hook 영상 생성 중 오류: {e}")
+                        hook_results = []
+
                     st.session_state.hook_versions = hook_results
                     prog.progress(100)
                     stat.text("✅ 완료!")
@@ -2708,15 +2939,15 @@ def render_step3():
                     success_count = sum(1 for h in hook_results if h.get("video_path"))
                     if success_count > 0:
                         st.success(f"🎉 Hook A/B 테스트 완료! {success_count}개 버전 생성 → STEP 4에서 비교/다운로드하세요.")
-                        # 첫 번째 성공 버전을 output_path에도 저장 (하위 호환)
                         first_ok = next((h for h in hook_results if h.get("video_path")), None)
                         if first_ok:
                             st.session_state.output_path = first_ok["video_path"]
                     else:
-                        st.error("❌ 모든 Hook 버전 조립 실패")
-                        for h in hook_results:
-                            if h.get("error"):
-                                st.warning(f"버전 {h['name']}: {h['error']}")
+                        if hook_results:
+                            st.error("❌ 모든 Hook 버전 조립 실패")
+                            for h in hook_results:
+                                if h.get("error"):
+                                    st.warning(f"버전 {h['name']}: {h['error']}")
                 else:
                     # ═══ 기존 단일 영상 모드 (Hook OFF) — 100% 유지 ═══
                     stat.text(f"✂️ {len(valid)}개 클립 조립 중...")
@@ -3021,13 +3252,18 @@ CLOVA_TTS_CLIENT_SECRET = "..."
 
 
 # ═════════════════════════════════════════════════════════════════
-# 라우팅: current_step에 따라 해당 render 함수 호출
+# 라우팅: app_phase → project_select / template_select / pipeline
 # ═════════════════════════════════════════════════════════════════
-if st.session_state.current_step == 1:
-    render_step1()
-elif st.session_state.current_step == 2:
-    render_step2()
-elif st.session_state.current_step == 3:
-    render_step3()
-elif st.session_state.current_step == 4:
-    render_step4()
+if st.session_state.app_phase == "project_select":
+    render_project_select()
+elif st.session_state.app_phase == "template_select":
+    render_template_select()
+elif st.session_state.app_phase == "pipeline":
+    if st.session_state.current_step == 1:
+        render_step1()
+    elif st.session_state.current_step == 2:
+        render_step2()
+    elif st.session_state.current_step == 3:
+        render_step3()
+    elif st.session_state.current_step == 4:
+        render_step4()
