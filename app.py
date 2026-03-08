@@ -114,6 +114,7 @@ defaults = {
     "sub_animation":"없음", "sub_margin":50, "ass_path":"",
     "bgm_results":[], "selected_bgm":"", "bgm_volume":0.2,
     "thumbnail_paths":[],
+    "cta_text":"", "cta_position":"하단", "cta_duration":3, "cta_color":"#FFFFFF",
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -143,6 +144,94 @@ BGM_CATEGORY_KEYWORDS = {
     "유아/키즈": "cute happy",
     "기타": "upbeat positive",
 }
+
+# ── CTA 카테고리별 라이브러리 ──────────────────────────────────
+CTA_LIBRARY = {
+    "생활용품": [
+        "지금 바로 쿠팡에서 확인하세요!",
+        "링크 타고 최저가 확인 👇",
+        "집에 하나쯤 있어야 하는 템!",
+        "이거 없으면 손해예요",
+        "매일 쓰는 꿀템, 바로가기 👇",
+        "정리정돈의 시작, 링크 클릭!",
+        "살림 9단의 선택!",
+        "가성비 끝판왕 보러가기 →",
+        "삶의 질이 달라집니다",
+        "지금 할인 중! 서두르세요",
+    ],
+    "뷰티/화장품": [
+        "피부가 달라지는 비밀 👇",
+        "쿠팡 최저가 확인하기!",
+        "내 피부에 딱 맞는 템 →",
+        "데일리 뷰티 필수템!",
+        "이 가격에? 바로 확인 👇",
+        "겟레디윗미 필수 아이템!",
+        "피부 고민 끝! 링크 클릭",
+        "뷰티 유튜버 추천템 →",
+        "한 번 쓰면 재구매각!",
+        "올리브영보다 싸다?! 확인 👇",
+    ],
+    "전자기기": [
+        "스펙 확인하러 가기 →",
+        "이 가격 실화? 쿠팡에서 확인!",
+        "가성비 끝판왕 보러가기 👇",
+        "IT 덕후 추천템!",
+        "언박싱 후기가 증명합니다",
+        "스마트한 선택, 링크 클릭!",
+        "이 기능에 이 가격?! →",
+        "테크 템 최저가 확인 👇",
+        "놓치면 후회할 가격!",
+        "지금 바로 스펙 비교하기",
+    ],
+    "패션/의류": [
+        "코디 완성! 링크 확인 👇",
+        "이 옷 어디서 샀냐고 물어봐요",
+        "데일리룩 필수템 보러가기 →",
+        "이 가격에 이 퀄리티?!",
+        "트렌드 선점! 지금 확인 👇",
+        "스타일링 꿀템 쿠팡 최저가!",
+        "옷잘알이 추천하는 템",
+        "코디 고민 끝! 클릭 →",
+        "시즌 필수템 보러가기",
+        "쿠팡에서 가격 확인 👇",
+    ],
+    "식품": [
+        "이 맛에 이 가격?! 확인 →",
+        "자꾸 생각나는 맛 👇",
+        "먹어본 사람만 아는 맛!",
+        "쿠팡 로켓배송으로 바로 받기!",
+        "간식 고민 끝! 링크 클릭",
+        "건강하게 맛있게 →",
+        "입소문 난 그 제품!",
+        "최저가 비교하러 가기 👇",
+        "장바구니 필수템!",
+        "오늘 주문하면 내일 도착!",
+    ],
+    "건강/헬스": [
+        "건강 투자, 지금 시작 👇",
+        "운동 효과 200% 올리는 템!",
+        "홈트 필수템 확인하기 →",
+        "몸이 달라지는 비밀!",
+        "쿠팡 최저가 확인 👇",
+        "건강 관리의 첫걸음!",
+        "프로틴 가성비 끝판왕 →",
+        "운동하는 사람은 다 쓰는 템",
+        "다이어트 성공 비결 👇",
+        "지금 시작하면 늦지 않아요!",
+    ],
+}
+CTA_COMMON = [
+    "쿠팡에서 최저가 확인 👇",
+    "링크는 댓글에!",
+    "지금 바로 확인하세요!",
+    "구매 링크 클릭 →",
+    "이 가격 놓치지 마세요!",
+    "쿠팡 로켓배송 가능!",
+    "할인 중! 서두르세요 👇",
+    "좋아요 + 저장 부탁해요!",
+    "더 많은 리뷰는 프로필에서!",
+    "구독하고 꿀템 받으세요!",
+]
 
 # ── 헬퍼 함수 ─────────────────────────────────────────────────────
 def get_api_key(name):
@@ -219,7 +308,7 @@ def get_video_duration(path):
     except:
         return 0
 
-def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2):
+def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2, cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF"):
     """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 + BGM 믹싱 지원)"""
     tmp = _ensure_dir("shortform_build")
 
@@ -276,6 +365,28 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
                 )
         else:
             st.warning("한글 폰트를 찾을 수 없어 자막 없이 조립합니다.")
+
+    # CTA 오버레이 (마지막 N초에만 표시)
+    if cta_text and cta_text.strip():
+        cta_fontpath = find_korean_font()
+        if cta_fontpath:
+            cta_fp_esc = cta_fontpath.replace("\\", "/").replace(":", "\\:")
+            cta_t = cta_text.strip().replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
+            cta_start = max(0, target_dur - cta_duration)
+            # 위치: 상단/하단/중앙하단 (자막과 충돌 방지)
+            if cta_position == "상단":
+                cta_y = "100"
+            elif cta_position == "중앙하단":
+                cta_y = "h*0.65"
+            else:  # 하단 (기본) — 자막보다 위
+                cta_y = "h-350"
+            vf_filters.append(
+                f"drawtext=fontfile='{cta_fp_esc}':text='{cta_t}':"
+                f"fontcolor={cta_color}:fontsize=42:borderw=2:"
+                f"x=(w-text_w)/2:y={cta_y}:"
+                f"box=1:boxcolor=black@0.5:boxborderw=12:"
+                f"enable='gte(t,{cta_start})'"
+            )
 
     final_out = tmp / "final.mp4"
     vf_str = ",".join(vf_filters) if vf_filters else "null"
@@ -1666,6 +1777,41 @@ with tab_sub:
             st.session_state.selected_bgm = ""
             st.rerun()
 
+    # ── CTA 오버레이 (선택사항) ──
+    st.markdown("---")
+    st.markdown('<div class="card"><div class="card-label">CTA</div><h3>📢 CTA 오버레이 (선택사항)</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">💡 영상 마지막 N초에 클릭유도 문구(CTA)를 표시합니다. 비워두면 CTA 없이 영상이 생성됩니다.</div>', unsafe_allow_html=True)
+
+    # 카테고리 자동 감지 → CTA 후보 목록
+    cta_cat = st.session_state.coupang_category or "기타"
+    cta_candidates = CTA_LIBRARY.get(cta_cat, []) + CTA_COMMON
+    # 중복 제거 (순서 유지)
+    seen_cta = set()
+    cta_unique = []
+    for c in cta_candidates:
+        if c not in seen_cta:
+            seen_cta.add(c)
+            cta_unique.append(c)
+
+    cta_c1, cta_c2 = st.columns([4, 2])
+    with cta_c1:
+        cta_select = st.selectbox("CTA 문구 선택", ["직접 입력"] + cta_unique, key="cta_selectbox",
+                                   help=f"카테고리: {cta_cat} — 해당 카테고리 CTA + 공통 CTA")
+        if cta_select == "직접 입력":
+            st.session_state.cta_text = st.text_input("CTA 직접 입력", value=st.session_state.cta_text,
+                                                       placeholder="예: 쿠팡에서 최저가 확인 👇", key="cta_custom_input")
+        else:
+            st.session_state.cta_text = cta_select
+    with cta_c2:
+        st.session_state.cta_position = st.radio("CTA 위치", ["상단", "하단", "중앙하단"], index=1,
+                                                   horizontal=True, key="cta_pos_radio",
+                                                   help="하단: 자막보다 위 / 상단: 화면 최상단 / 중앙하단: 화면 65%")
+        st.session_state.cta_duration = st.slider("표시 시간 (마지막 N초)", 2, 10, st.session_state.cta_duration, key="cta_dur_slider")
+        st.session_state.cta_color = st.color_picker("CTA 글자색", st.session_state.cta_color, key="cta_col_picker")
+
+    if st.session_state.cta_text:
+        st.markdown(f'<div class="info-box">📢 CTA: "<strong>{st.session_state.cta_text}</strong>" — 마지막 {st.session_state.cta_duration}초, {st.session_state.cta_position}</div>', unsafe_allow_html=True)
+
     # 영상 조립
     st.markdown("---")
     st.markdown('<div class="card"><div class="card-label">STEP 05</div><h3>🎬 최종 영상 조립</h3></div>', unsafe_allow_html=True)
@@ -1702,8 +1848,14 @@ with tab_sub:
                 ass_file = st.session_state.get("ass_path", "")
                 bgm_file = st.session_state.get("selected_bgm", "")
                 bgm_vol = st.session_state.get("bgm_volume", 0.2)
+                cta_t = st.session_state.get("cta_text", "")
+                cta_p = st.session_state.get("cta_position", "하단")
+                cta_d = st.session_state.get("cta_duration", 3)
+                cta_clr = st.session_state.get("cta_color", "#FFFFFF")
                 output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio,
-                                                  ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol)
+                                                  ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
+                                                  cta_text=cta_t, cta_position=cta_p,
+                                                  cta_duration=cta_d, cta_color=cta_clr)
 
                 if output and os.path.exists(output):
                     prog.progress(100)
