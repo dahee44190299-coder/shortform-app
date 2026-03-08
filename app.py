@@ -118,6 +118,27 @@ def generate_tts_auto(text, output_path, speaker="nara", voice_id="21m00Tcm4TlvD
         return generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed)
 
 
+def cleanup_hook_temp_files():
+    """Hook 생성 임시 파일 정리. 실패해도 앱 크래시 방지."""
+    import glob as _g
+    patterns = [
+        "shortform_hooks/hook_tts_*.mp3",
+        "shortform_hooks/merged_tts_*.mp3",
+        "shortform_hooks/hook_loop_*.mp4",
+        "shortform_hooks/hook_tts_adjusted.*",
+        "shortform_hooks/tts_concat.txt",
+    ]
+    removed = 0
+    for pat in patterns:
+        for f in _g.glob(pat):
+            try:
+                os.remove(f)
+                removed += 1
+            except:
+                pass
+    return removed
+
+
 st.set_page_config(page_title="숏폼 자동화 제작기", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
 # ── CSS: Apple/Toss 미니멀 ─────────────────────────────────────────
@@ -226,6 +247,9 @@ TEMPLATES = {
         "pattern_interrupt": True,
         "tts_engine": "elevenlabs",
         "content_mode": "구매전환형",
+        "cta_text": "쿠팡에서 확인하기",
+        "sub_color": "#FF6B35",
+        "script_tone": "후기 형식, 파트너스 링크 유도 톤. 실사용 후기처럼 자연스럽게, '이거 진짜 대박이에요' 같은 친근한 표현.",
     },
     "shopping_promo": {
         "name": "🏪 쇼핑몰 제품 홍보",
@@ -236,6 +260,9 @@ TEMPLATES = {
         "pattern_interrupt": False,
         "tts_engine": "elevenlabs",
         "content_mode": "클릭유도형",
+        "cta_text": "지금 바로 구매하기",
+        "sub_color": "#FFFFFF",
+        "script_tone": "기능 중심, 가격 강조 톤. 스펙과 할인율을 명확하게 전달. 깔끔하고 신뢰감 있는 톤.",
     },
     "tiktok_review": {
         "name": "📱 틱톡 리뷰",
@@ -246,6 +273,9 @@ TEMPLATES = {
         "pattern_interrupt": True,
         "tts_engine": "clova",
         "content_mode": "리뷰형",
+        "cta_text": "링크 클릭!",
+        "sub_color": "#FFD700",
+        "script_tone": "친근한 말투, 짧고 임팩트 있게. '야 이거 써봤는데...' 같은 일상 대화체. 반말 OK.",
     },
     "problem_solving": {
         "name": "🔧 문제 해결 광고",
@@ -256,6 +286,9 @@ TEMPLATES = {
         "pattern_interrupt": True,
         "tts_engine": "elevenlabs",
         "content_mode": "문제해결형",
+        "cta_text": "이거 하나면 해결",
+        "sub_color": "#FF4444",
+        "script_tone": "문제 제시 → 해결책 구조. 드라마틱한 전환. '이런 경험 있으시죠?' 공감 후 솔루션 제시.",
     },
 }
 
@@ -329,6 +362,11 @@ def _apply_template(template_key):
     st.session_state.retention_booster_enabled = tpl.get("retention_booster", True)
     st.session_state.tts_engine = tpl.get("tts_engine", "elevenlabs")
     st.session_state.cta_position = tpl.get("cta_position", "하단")
+    # Template 차별화 필드
+    if tpl.get("cta_text"):
+        st.session_state.cta_text = tpl["cta_text"]
+    if tpl.get("sub_color"):
+        st.session_state.cta_color = tpl["sub_color"]
 
 
 def render_template_select():
@@ -879,15 +917,31 @@ def merge_tts_audio(hook_tts_path, body_tts_path, output_path, hook_dur=3.0):
     if not hook_adjusted.exists():
         return body_tts_path  # fallback
 
+    # body_tts도 동일 코덱(aac, 44100Hz)으로 재인코딩하여 concat 안정성 확보
+    body_adjusted = tmp / "body_tts_adjusted.m4a"
+    if body_tts_path and os.path.exists(body_tts_path):
+        try:
+            subprocess.run([
+                "ffmpeg", "-y", "-i", body_tts_path,
+                "-ar", "44100", "-ac", "1", "-c:a", "aac", "-b:a", "128k",
+                str(body_adjusted)
+            ], capture_output=True, text=True, timeout=30)
+        except:
+            body_adjusted = Path(body_tts_path)  # fallback: 원본 사용
+        if not body_adjusted.exists():
+            body_adjusted = Path(body_tts_path)
+    else:
+        body_adjusted = None
+
     # concat hook + body
     concat_file = tmp / "tts_concat.txt"
     with open(concat_file, "w") as f:
         f.write(f"file '{hook_adjusted}'\n")
-        if body_tts_path and os.path.exists(body_tts_path):
-            f.write(f"file '{body_tts_path}'\n")
+        if body_adjusted and body_adjusted.exists():
+            f.write(f"file '{body_adjusted}'\n")
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
-        "-c:a", "aac", "-b:a", "128k", str(output_path)
+        "-ar", "44100", "-ac", "1", "-c:a", "aac", "-b:a", "128k", str(output_path)
     ], capture_output=True, text=True, timeout=30)
     return str(output_path) if os.path.exists(output_path) else body_tts_path
 
@@ -1746,44 +1800,43 @@ def render_step1():
                         index=_src_opts.index(_cur_src_label) if _cur_src_label in _src_opts else 0)
     st.session_state.source_type = _src_map[_src_sel]
 
-    # ── 제품 정보 + 쿠팡 링크 (접힌 상태) ──
-    _exp_label = "📦 제품 기본 정보 & 쿠팡 링크"
-    if st.session_state.get("coupang_product"):
-        _exp_label += f"  —  ✅ {st.session_state.coupang_product}"
-    with st.expander(_exp_label, expanded=False):
-        s1c1, s1c2 = st.columns(2)
-        with s1c1:
-            product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
-        with s1c2:
-            product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
+    # ── 제품 정보 + 쿠팡 링크 (카드 고정 노출) ──
+    st.markdown('<div class="ux-card">', unsafe_allow_html=True)
+    st.markdown("#### 📦 제품 기본 정보 & 쿠팡 링크")
+    s1c1, s1c2 = st.columns(2)
+    with s1c1:
+        product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
+    with s1c2:
+        product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
 
-        content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
-        mode_desc = {
-            "클릭유도형": "궁금증·충격으로 클릭 유도",
-            "구매전환형": "구매 결정을 촉진",
-            "리뷰형": "사용 후기·장단점 중심",
-            "비교형": "경쟁 제품과 비교 분석",
-            "문제해결형": "문제 제시 → 해결",
-            "바이럴형": "공유·밈·감성 자극",
-        }
-        st.session_state.content_mode = st.selectbox(
-            "🎯 콘텐츠 목적",
-            content_modes,
-            index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
-            help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
-        )
-        st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
-        st.markdown("---")
-        st.markdown("**🔗 쿠팡 제휴 링크**")
-        st.session_state.coupang_affiliate_link = st.text_input(
-            "제휴 링크 URL",
-            value=st.session_state.coupang_affiliate_link,
-            placeholder="https://link.coupang.com/...",
-            help="유튜브/인스타 설명란에 자동 삽입됩니다.",
-            label_visibility="collapsed"
-        )
-        if st.session_state.coupang_affiliate_link:
-            st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
+    content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
+    mode_desc = {
+        "클릭유도형": "궁금증·충격으로 클릭 유도",
+        "구매전환형": "구매 결정을 촉진",
+        "리뷰형": "사용 후기·장단점 중심",
+        "비교형": "경쟁 제품과 비교 분석",
+        "문제해결형": "문제 제시 → 해결",
+        "바이럴형": "공유·밈·감성 자극",
+    }
+    st.session_state.content_mode = st.selectbox(
+        "🎯 콘텐츠 목적",
+        content_modes,
+        index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
+        help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
+    )
+    st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
+    st.markdown("---")
+    st.markdown("**🔗 쿠팡 제휴 링크**")
+    st.session_state.coupang_affiliate_link = st.text_input(
+        "제휴 링크 URL",
+        value=st.session_state.coupang_affiliate_link,
+        placeholder="https://link.coupang.com/...",
+        help="유튜브/인스타 설명란에 자동 삽입됩니다.",
+        label_visibility="collapsed"
+    )
+    if st.session_state.coupang_affiliate_link:
+        st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ═══════ A) 쿠팡 URL ═══════
     if st.session_state.source_type == "URL":
@@ -1977,15 +2030,15 @@ def render_step1():
             st.markdown("---")
 
         # ── ④ 타오바오 제조사 영상 안내 ──
-        st.info("💡 이 제품을 타오바오에서 검색해서 제조사 홍보 영상을 다운받으세요.\n다운받은 영상은 C) 영상 직접 업로드에 올리세요.")
-        with st.expander("📥 타오바오 영상 다운로드 방법"):
-            st.markdown("""
-1. 타오바오에서 제품명으로 검색
-2. 상세페이지에서 제조사 홍보 영상 확인
-3. 크롬 확장프로그램(Video Downloader)으로 저장
-4. 여러 판매처에서 다양한 영상 확보
-5. 다운받은 영상은 **C) 영상 직접 업로드**에 올리세요
-            """)
+        with st.expander("📥 타오바오 영상 다운로드 방법", expanded=False):
+            _tb_query = st.session_state.get("coupang_product", "") or st.session_state.get("_w_pname", "")
+            st.markdown("**Step 1.** 타오바오에서 제품명으로 검색")
+            _tb_url = f"https://s.taobao.com/search?q={_tb_query}" if _tb_query else "https://s.taobao.com"
+            st.markdown(f'<a href="{_tb_url}" target="_blank"><button style="background:#FF6B35;color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;">타오바오에서 검색하기 ▶</button></a>', unsafe_allow_html=True)
+            st.markdown("**Step 2.** 상세페이지에서 제조사 홍보 영상 확인")
+            st.markdown("**Step 3.** 크롬 확장프로그램으로 영상 저장")
+            st.markdown('<a href="https://chromewebstore.google.com/search/video%20downloader" target="_blank"><button style="background:#4285F4;color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;">Video Downloader Pro 설치하기 ▶</button></a>', unsafe_allow_html=True)
+            st.markdown("**Step 4.** 다운받은 영상을 아래에 업로드 → **🎥 영상 직접 업로드** 선택")
         st.markdown("---")
 
         # ─── Pexels 배경 영상 ───
@@ -2239,15 +2292,15 @@ def render_step1():
 
         # 타오바오 안내
         st.markdown("---")
-        st.info("💡 이 제품을 타오바오에서 검색해서 제조사 홍보 영상을 다운받으세요.")
-        with st.expander("📥 타오바오 영상 다운로드 방법"):
-            st.markdown("""
-1. 타오바오에서 제품명으로 검색
-2. 상세페이지에서 제조사 홍보 영상 확인
-3. 크롬 확장프로그램(Video Downloader)으로 저장
-4. 여러 판매처에서 다양한 영상 확보
-5. 다운받은 영상을 위에서 업로드하세요
-            """)
+        with st.expander("📥 타오바오 영상 다운로드 방법", expanded=False):
+            _tb_q2 = st.session_state.get("coupang_product", "") or st.session_state.get("_w_pname", "")
+            st.markdown("**Step 1.** 타오바오에서 제품명으로 검색")
+            _tb_u2 = f"https://s.taobao.com/search?q={_tb_q2}" if _tb_q2 else "https://s.taobao.com"
+            st.markdown(f'<a href="{_tb_u2}" target="_blank"><button style="background:#FF6B35;color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;">타오바오에서 검색하기 ▶</button></a>', unsafe_allow_html=True)
+            st.markdown("**Step 2.** 상세페이지에서 제조사 홍보 영상 확인")
+            st.markdown("**Step 3.** 크롬 확장프로그램으로 영상 저장")
+            st.markdown('<a href="https://chromewebstore.google.com/search/video%20downloader" target="_blank"><button style="background:#4285F4;color:#fff;border:none;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:.85rem;">Video Downloader Pro 설치하기 ▶</button></a>', unsafe_allow_html=True)
+            st.markdown("**Step 4.** 다운받은 영상을 위에서 업로드하세요")
 
     _render_nav_buttons()
 
@@ -2479,9 +2532,13 @@ def render_step3():
                     "문제해결형": "일상 불편함 제시 → 이 제품이 해결. before/after 느낌.",
                     "바이럴형": "밈·유머·감성 자극. 공유하고 싶은 콘텐츠. 트렌디한 표현.",
                 }
+                _tpl_tone = ""
+                _active_tpl = TEMPLATES.get(st.session_state.get("active_template", ""), {})
+                if _active_tpl.get("script_tone"):
+                    _tpl_tone = f"\n템플릿 톤: {_active_tpl['script_tone']}"
                 result = call_claude(
                     "쿠팡 파트너스 숏폼 스크립트 전문가. 스크립트만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}{_tpl_tone}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
                 )
                 if result:
                     st.session_state.coupang_script = result
@@ -2914,23 +2971,30 @@ def render_step3():
 
                 if _hook_on and st.session_state.hook_versions:
                     # ═══ Hook A/B 테스트 모드: 버전별 영상 생성 ═══
-                    stat.text(f"🪝 Hook A/B 테스트: {len(st.session_state.hook_versions)}개 버전 생성 중...")
-                    prog.progress(30)
+                    _hook_count = len(st.session_state.hook_versions)
+                    stat.text(f"🪝 Hook A/B 테스트: {_hook_count}개 버전 생성 시작...")
+                    prog.progress(10)
 
-                    try:
-                        hook_results = assemble_hook_versions(
-                            valid, subs, tts_path, target_dur, crop_ratio=ratio,
-                            ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
-                            cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
-                            hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
-                            pattern_interrupt=_pi_on, retention_booster=_rb_on
-                        )
-                    except subprocess.TimeoutExpired:
-                        st.error("⏱️ Hook 영상 생성 시간 초과 — 클립 수를 줄이거나 목표 길이를 짧게 설정해주세요.")
-                        hook_results = []
-                    except Exception as e:
-                        st.error(f"❌ Hook 영상 생성 중 오류: {e}")
-                        hook_results = []
+                    with st.status(f"🪝 Hook {_hook_count}개 버전 생성 중...", expanded=True) as _hook_status:
+                        for _hi, _hv in enumerate(st.session_state.hook_versions):
+                            st.write(f"**버전 {_hv.get('name', chr(65+_hi))}** 생성 중... ({_hi+1}/{_hook_count})")
+                        try:
+                            hook_results = assemble_hook_versions(
+                                valid, subs, tts_path, target_dur, crop_ratio=ratio,
+                                ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
+                                cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
+                                hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
+                                pattern_interrupt=_pi_on, retention_booster=_rb_on
+                            )
+                            _hook_status.update(label=f"✅ Hook {_hook_count}개 버전 생성 완료!", state="complete")
+                        except subprocess.TimeoutExpired:
+                            st.error("⏱️ Hook 영상 생성 시간 초과 — 클립 수를 줄이거나 목표 길이를 짧게 설정해주세요.")
+                            hook_results = []
+                            _hook_status.update(label="❌ 시간 초과", state="error")
+                        except Exception as e:
+                            st.error(f"❌ Hook 영상 생성 중 오류: {e}")
+                            hook_results = []
+                            _hook_status.update(label="❌ 오류 발생", state="error")
 
                     st.session_state.hook_versions = hook_results
                     prog.progress(100)
@@ -2948,6 +3012,10 @@ def render_step3():
                             for h in hook_results:
                                 if h.get("error"):
                                     st.warning(f"버전 {h['name']}: {h['error']}")
+                    # 임시파일 정리
+                    _cleaned = cleanup_hook_temp_files()
+                    if _cleaned > 0:
+                        st.caption(f"🧹 임시 파일 {_cleaned}개 정리 완료")
                 else:
                     # ═══ 기존 단일 영상 모드 (Hook OFF) — 100% 유지 ═══
                     stat.text(f"✂️ {len(valid)}개 클립 조립 중...")
