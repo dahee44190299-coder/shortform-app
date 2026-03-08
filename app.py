@@ -906,9 +906,10 @@ def generate_thumbnail(template, resolution, main_text, sub_text="", product_img
 
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
-<div style="padding:32px 0 16px;">
+<div style="padding:32px 0 8px;">
   <h1 style="font-size:2rem;font-weight:800;margin:0;">🎬 숏폼 자동화 제작기</h1>
   <p style="color:#8b95a1;font-size:.95rem;margin:4px 0 0;">키워드 검색 → 클립 선택 → AI 스크립트 → TTS → 자막 → 다운로드</p>
+  <p style="color:#FF6B35;font-size:1.25rem;font-weight:700;margin:12px 0 0;text-align:center;">쿠팡 URL 하나로 → 숏폼 영상 완성 ✨</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -951,29 +952,28 @@ with st.sidebar:
 
     st.markdown("---")
 
-    st.markdown("**🎙️ TTS 설정**")
-    tts_engine = st.radio("TTS 엔진", ["🇰🇷 클로바 (한국어)", "🌍 ElevenLabs"], horizontal=True)
-    if "클로바" in tts_engine:
-        tts_voice = st.selectbox("클로바 음성", [
-            "nara - 여성 (자연스러움)", "jinho - 남성 (신뢰감)",
-            "nbora - 밝은 여성", "ndain - 차분한 남성",
-        ])
-        elevenlabs_voice_id = None
-    else:
-        el_voices = {
-            "Rachel (여성, 차분)": "21m00Tcm4TlvDq8ikWAM",
-            "Bella (여성, 밝음)": "EXAVITQu4vr4xnSDxMaL",
-            "Antoni (남성, 신뢰감)": "ErXwobaYiN019PkySvjV",
-            "Josh (남성, 젊음)": "TxGEqnHWrfWFTfGW9XjX",
-        }
-        tts_voice = st.selectbox("ElevenLabs 음성", list(el_voices.keys()))
-        elevenlabs_voice_id = el_voices[tts_voice]
-    tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
+    with st.expander("🎙️ TTS 설정", expanded=False):
+        tts_engine = st.radio("TTS 엔진", ["🇰🇷 클로바 (한국어)", "🌍 ElevenLabs"], horizontal=True)
+        if "클로바" in tts_engine:
+            tts_voice = st.selectbox("클로바 음성", [
+                "nara - 여성 (자연스러움)", "jinho - 남성 (신뢰감)",
+                "nbora - 밝은 여성", "ndain - 차분한 남성",
+            ])
+            elevenlabs_voice_id = None
+        else:
+            el_voices = {
+                "Rachel (여성, 차분)": "21m00Tcm4TlvDq8ikWAM",
+                "Bella (여성, 밝음)": "EXAVITQu4vr4xnSDxMaL",
+                "Antoni (남성, 신뢰감)": "ErXwobaYiN019PkySvjV",
+                "Josh (남성, 젊음)": "TxGEqnHWrfWFTfGW9XjX",
+            }
+            tts_voice = st.selectbox("ElevenLabs 음성", list(el_voices.keys()))
+            elevenlabs_voice_id = el_voices[tts_voice]
+        tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
 
-    st.markdown("---")
-    st.markdown("**✂️ 영상 설정**")
-    target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5)
-    crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"])
+    with st.expander("✂️ 영상 설정", expanded=False):
+        target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5)
+        crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"])
 
     st.markdown("---")
     with st.expander("🔑 API 연결 상태"):
@@ -986,6 +986,23 @@ with st.sidebar:
         ]:
             ok = has_key(env)
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
+
+# ── 스텝 진행 표시 ─────────────────────────────────────────────
+st.markdown("""
+<div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0 12px;font-size:.82rem;font-weight:600;color:#8b95a1;flex-wrap:wrap;">
+  <span style="background:#1a1a1a;color:#fff;padding:4px 12px;border-radius:20px;">🛒 입력</span>
+  <span style="color:#ccc;">→</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">📸 소스</span>
+  <span style="color:#ccc;">→</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">① 클립</span>
+  <span style="color:#ccc;">→</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">② 스크립트</span>
+  <span style="color:#ccc;">→</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">③ 자막</span>
+  <span style="color:#ccc;">→</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">④ 완성</span>
+</div>
+""", unsafe_allow_html=True)
 
 # ── 탭 ───────────────────────────────────────────────────────────
 tab_coupang, tab_source, tab_clips, tab_script, tab_sub, tab_dl = st.tabs([
