@@ -904,6 +904,7 @@ def generate_thumbnail(template, resolution, main_text, sub_text="", product_img
     except Exception:
         return None
 
+
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
 <div style="padding:32px 0 8px;">
@@ -917,64 +918,9 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### ⚙️ 설정")
     st.markdown("---")
-    product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X")
-    product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85)
-
-    st.markdown("---")
-    st.markdown("**🎯 콘텐츠 목적**")
-    content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
-    mode_desc = {
-        "클릭유도형": "궁금증·충격으로 클릭 유도",
-        "구매전환형": "구매 결정을 촉진",
-        "리뷰형": "사용 후기·장단점 중심",
-        "비교형": "경쟁 제품과 비교 분석",
-        "문제해결형": "문제 제시 → 해결",
-        "바이럴형": "공유·밈·감성 자극",
-    }
-    st.session_state.content_mode = st.selectbox(
-        "목적 선택",
-        content_modes,
-        index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
-        help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
-    )
-    st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
-
-    st.markdown("---")
-    st.markdown("**🔗 쿠팡 파트너스 링크**")
-    st.session_state.coupang_affiliate_link = st.text_input(
-        "제휴 링크 URL",
-        value=st.session_state.coupang_affiliate_link,
-        placeholder="https://link.coupang.com/...",
-        help="유튜브/인스타 설명란에 자동 삽입됩니다."
-    )
-    if st.session_state.coupang_affiliate_link:
-        st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    with st.expander("🎙️ TTS 설정", expanded=False):
-        tts_engine = st.radio("TTS 엔진", ["🇰🇷 클로바 (한국어)", "🌍 ElevenLabs"], horizontal=True)
-        if "클로바" in tts_engine:
-            tts_voice = st.selectbox("클로바 음성", [
-                "nara - 여성 (자연스러움)", "jinho - 남성 (신뢰감)",
-                "nbora - 밝은 여성", "ndain - 차분한 남성",
-            ])
-            elevenlabs_voice_id = None
-        else:
-            el_voices = {
-                "Rachel (여성, 차분)": "21m00Tcm4TlvDq8ikWAM",
-                "Bella (여성, 밝음)": "EXAVITQu4vr4xnSDxMaL",
-                "Antoni (남성, 신뢰감)": "ErXwobaYiN019PkySvjV",
-                "Josh (남성, 젊음)": "TxGEqnHWrfWFTfGW9XjX",
-            }
-            tts_voice = st.selectbox("ElevenLabs 음성", list(el_voices.keys()))
-            elevenlabs_voice_id = el_voices[tts_voice]
-        tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
-
     with st.expander("✂️ 영상 설정", expanded=False):
         target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5)
         crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"])
-
     st.markdown("---")
     with st.expander("🔑 API 연결 상태"):
         for label, env in [
@@ -990,37 +936,74 @@ with st.sidebar:
 # ── 스텝 진행 표시 ─────────────────────────────────────────────
 st.markdown("""
 <div style="display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0 12px;font-size:.82rem;font-weight:600;color:#8b95a1;flex-wrap:wrap;">
-  <span style="background:#1a1a1a;color:#fff;padding:4px 12px;border-radius:20px;">🛒 입력</span>
+  <span style="background:#1a1a1a;color:#fff;padding:4px 12px;border-radius:20px;">🔍 소스 입력</span>
   <span style="color:#ccc;">→</span>
-  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">📸 소스</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">✍️ 콘텐츠</span>
   <span style="color:#ccc;">→</span>
-  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">① 클립</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">🎬 영상 편집</span>
   <span style="color:#ccc;">→</span>
-  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">② 스크립트</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">📢 배포 준비</span>
   <span style="color:#ccc;">→</span>
-  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">③ 자막</span>
-  <span style="color:#ccc;">→</span>
-  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">④ 완성</span>
+  <span style="background:#f2f3f5;padding:4px 12px;border-radius:20px;">⬇️ 저장</span>
 </div>
 """, unsafe_allow_html=True)
 
 # ── 탭 ───────────────────────────────────────────────────────────
-tab_coupang, tab_source, tab_clips, tab_script, tab_sub, tab_dl = st.tabs([
-    "🛒 쿠팡 파트너스", "📸 영상 소스", "① 클립 & 순서", "② 스크립트 & TTS", "③ 자막 & 편집", "④ 다운로드"
+tab_step1, tab_step2, tab_step3, tab_step4, tab_step5 = st.tabs([
+    "🔍 STEP 1: 소스 입력", "✍️ STEP 2: 콘텐츠", "🎬 STEP 3: 영상 편집", "📢 STEP 4: 배포 준비", "⬇️ STEP 5: 저장"
 ])
 
 # ═════════════════════════════════════════════════════════════════
-# TAB: 쿠팡 파트너스
+# STEP 1: 소스 입력
 # ═════════════════════════════════════════════════════════════════
-with tab_coupang:
-    st.markdown('<div class="card"><div class="card-label">COUPANG PARTNERS</div><h3>🛒 쿠팡 파트너스 숏폼 자동 생성</h3></div>', unsafe_allow_html=True)
+with tab_step1:
+    st.markdown('<div class="card"><div class="card-label">STEP 01</div><h3>🔍 소스 입력 — 제품 정보 & 영상 소스</h3></div>', unsafe_allow_html=True)
 
+    # ── 제품 기본 정보 ──
+    st.markdown("#### 📦 제품 기본 정보")
+    s1c1, s1c2 = st.columns(2)
+    with s1c1:
+        product_name = st.text_input("📦 제품명", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
+    with s1c2:
+        product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
+
+    content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
+    mode_desc = {
+        "클릭유도형": "궁금증·충격으로 클릭 유도",
+        "구매전환형": "구매 결정을 촉진",
+        "리뷰형": "사용 후기·장단점 중심",
+        "비교형": "경쟁 제품과 비교 분석",
+        "문제해결형": "문제 제시 → 해결",
+        "바이럴형": "공유·밈·감성 자극",
+    }
+    s1m1, s1m2 = st.columns([2, 3])
+    with s1m1:
+        st.session_state.content_mode = st.selectbox(
+            "🎯 콘텐츠 목적",
+            content_modes,
+            index=content_modes.index(st.session_state.content_mode) if st.session_state.content_mode in content_modes else 0,
+            help="콘텐츠 목적에 따라 AI가 제목·스크립트·해시태그 스타일을 맞춰줍니다."
+        )
+        st.caption(f"💡 {mode_desc.get(st.session_state.content_mode, '')}")
+    with s1m2:
+        st.markdown("**🔗 쿠팡 파트너스 링크**")
+        st.session_state.coupang_affiliate_link = st.text_input(
+            "제휴 링크 URL",
+            value=st.session_state.coupang_affiliate_link,
+            placeholder="https://link.coupang.com/...",
+            help="유튜브/인스타 설명란에 자동 삽입됩니다."
+        )
+        if st.session_state.coupang_affiliate_link:
+            st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # ── 쿠팡 상품 URL ──
+    st.markdown("#### 🛒 쿠팡 / 아마존 상품 URL")
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 필요 — Secrets에 API 키를 등록하세요</div>', unsafe_allow_html=True)
 
-    # 1. 쿠팡 URL 입력
-    st.markdown("#### 1️⃣ 쿠팡 상품 URL 입력")
-    coupang_url = st.text_input("쿠팡 상품 링크", placeholder="https://www.coupang.com/vp/products/...", label_visibility="collapsed")
+    coupang_url = st.text_input("상품 URL (쿠팡/아마존)", placeholder="https://www.coupang.com/vp/products/...", label_visibility="collapsed")
 
     col_extract, col_status = st.columns([1, 3])
     with col_extract:
@@ -1045,247 +1028,23 @@ with tab_coupang:
             "카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "기타"]
         )
 
-    if st.session_state.coupang_product:
-        pname = st.session_state.coupang_product
-        pcat = st.session_state.coupang_category
+    st.markdown("---")
 
-        st.markdown("---")
+    # ─── 제품 이미지 자동 추출 ───
+    st.markdown("### 🛒 제품 이미지 자동 추출")
+    st.markdown('<div class="info-box">상품 URL에서 제품 이미지를 자동 추출하고, Ken Burns 효과로 영상화합니다.</div>', unsafe_allow_html=True)
 
-        # 2. 후킹 제목 9개 (3유형 × 3개)
-        st.markdown("#### 2️⃣ AI 제목 자동 생성 (9개)")
-        st.markdown('<div class="info-box">3가지 유형 × 3개씩 = 총 9개 제목을 AI가 생성합니다. 📌 버튼으로 원하는 제목을 바로 적용하세요.</div>', unsafe_allow_html=True)
-
-        if st.button("✨ AI 제목 9개 생성", key="gen_titles"):
-            with st.spinner("3가지 유형 × 3개 제목 생성 중..."):
-                cmode = st.session_state.content_mode
-                mode_emphasis = {
-                    "클릭유도형": "궁금증 유발형을 특히 강렬하게 만들어줘.",
-                    "구매전환형": "혜택강조형을 특히 매력적으로 만들어줘.",
-                    "리뷰형": "문제해결형을 실제 사용 경험 중심으로 만들어줘.",
-                    "비교형": "궁금증 유발형에 비교 요소를 넣어줘.",
-                    "문제해결형": "문제해결형을 가장 공감가게 만들어줘.",
-                    "바이럴형": "궁금증 유발형을 밈/유머 스타일로 만들어줘.",
-                }
-                result = call_claude(
-                    "숏폼 제목 전문가. 정확히 아래 형식으로 출력. 제목만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n{mode_emphasis.get(cmode, '')}\n\n아래 3가지 유형별로 각 3개씩 총 9개의 숏폼 제목을 만들어줘.\n\n[궁금증유발]\n- '이거 모르면 손해', '진짜 이게 돼?' 같은 호기심 자극 스타일\n[문제해결]\n- '이것 때문에 고민 끝', '해결한 제품' 같은 솔루션 제시 스타일\n[혜택강조]\n- '이 가격에?', '가성비 끝판왕' 같은 가격/혜택 강조 스타일\n\n조건:\n- 각 제목 15자 이내\n- 이모지 1개 포함\n- 유형 라벨 없이, 3줄 빈 줄로 유형 구분\n- 총 9줄 출력 (유형당 3줄)"
-                )
-                if result:
-                    lines = [l.strip() for l in result.strip().split("\n") if l.strip()]
-                    titles = []
-                    type_names = ["궁금증유발", "문제해결", "혜택강조"]
-                    type_idx = 0
-                    count = 0
-                    for l in lines:
-                        clean = l.lstrip("0123456789.-) ·•")
-                        if clean.startswith("[") or clean.startswith("【"):
-                            continue
-                        if clean:
-                            ttype = type_names[min(type_idx, 2)]
-                            titles.append({"text": clean, "type": ttype})
-                            count += 1
-                            if count % 3 == 0:
-                                type_idx += 1
-                    st.session_state.generated_titles = titles[:9]
+    if coupang_url:
+        if st.button("📸 이미지 추출하기", key="extract_imgs_coupang"):
+            with st.spinner("제품 이미지 추출 중..."):
+                imgs = extract_product_images(coupang_url)
+                if imgs:
+                    st.session_state.product_images = imgs
+                    st.success(f"✅ {len(imgs)}개 이미지 추출 완료!")
                 else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
-
-        if st.session_state.generated_titles:
-            type_badges = {"궁금증유발": "badge-red", "문제해결": "badge-blue", "혜택강조": "badge-green"}
-            current_type = ""
-            for ti, title_item in enumerate(st.session_state.generated_titles):
-                ttype = title_item.get("type", "")
-                if ttype != current_type:
-                    current_type = ttype
-                    badge_cls = type_badges.get(ttype, "badge-gray")
-                    st.markdown(f'<span class="badge {badge_cls}" style="margin-top:8px;">{ttype}</span>', unsafe_allow_html=True)
-                tc1, tc2 = st.columns([5, 1])
-                with tc1:
-                    st.markdown(f"&nbsp;&nbsp;`{title_item['text']}`")
-                with tc2:
-                    if st.button("📌 적용", key=f"title_{ti}", use_container_width=True):
-                        st.session_state.selected_title = title_item["text"]
-                        st.session_state.coupang_titles = title_item["text"]
-                        st.success(f"✅ 제목 적용됨!")
-                        st.rerun()
-
-            if st.session_state.selected_title:
-                st.markdown(f'<div class="info-box">현재 적용된 제목: <strong>{st.session_state.selected_title}</strong></div>', unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # 3. 스크립트 자동 생성
-        st.markdown("#### 3️⃣ 30~45초 스크립트 자동 생성")
-        if st.button("✨ AI 스크립트 생성", key="gen_coupang_script"):
-            with st.spinner("스크립트 생성 중..."):
-                cmode = st.session_state.content_mode
-                mode_guide = {
-                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도. 첫 문장에 '이걸 모르면...' 같은 호기심 자극.",
-                    "구매전환형": "할인·한정·혜택 강조. CTA에서 즉시 구매 촉진. '지금 안 사면 후회' 느낌.",
-                    "리뷰형": "실제 사용 경험 중심. 장점·단점 솔직하게. 신뢰감 있는 톤.",
-                    "비교형": "경쟁 제품 대비 차별점 강조. 'A vs B' 구조. 데이터·수치 활용.",
-                    "문제해결형": "일상 불편함 제시 → 이 제품이 해결. before/after 느낌.",
-                    "바이럴형": "밈·유머·감성 자극. 공유하고 싶은 콘텐츠. 트렌디한 표현.",
-                }
-                result = call_claude(
-                    "쿠팡 파트너스 숏폼 스크립트 전문가. 스크립트만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
-                )
-                if result:
-                    st.session_state.coupang_script = result
-                else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
-
-        if st.session_state.coupang_script:
-            st.session_state.coupang_script = st.text_area(
-                "스크립트 (수정 가능)", value=st.session_state.coupang_script, height=180
-            )
-            # 스크립트를 메인 스크립트에도 반영
-            if st.button("📋 이 스크립트를 제작 탭에 적용", key="apply_script"):
-                st.session_state.script = st.session_state.coupang_script
-                st.success("✅ 스크립트 탭 ②에 적용됨!")
-
-        st.markdown("---")
-
-        # 4. 해시태그 20개 (AI 10 + 카테고리DB 5 + 공통 5)
-        st.markdown("#### 4️⃣ 해시태그 자동 생성 (AI + DB)")
-        st.markdown('<div class="info-box">AI 맞춤 10개 + 카테고리 DB 5개 + 공통 필수 5개 = 총 20개 해시태그를 생성합니다.</div>', unsafe_allow_html=True)
-
-        if st.button("✨ 해시태그 20개 생성", key="gen_hashtags"):
-            with st.spinner("AI 해시태그 생성 + 카테고리 DB 조합 중..."):
-                cmode = st.session_state.content_mode
-                # AI로 맞춤 해시태그 10개 생성
-                result = call_claude(
-                    "SNS 해시태그 전문가. 해시태그만 출력. # 붙여서 공백으로 구분. 딱 10개만.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품에 최적화된 해시태그 10개를 만들어줘.\n조건:\n- 제품 특성에 맞는 검색량 높은 키워드\n- '{cmode}' 목적에 맞는 태그 포함\n- #shorts #fyp #viral 중 2개 포함\n- 모두 # 붙여서 공백으로 구분\n- 딱 10개만 출력"
-                )
-                if result:
-                    # AI 결과 파싱
-                    ai_tags = [t.strip() for t in result.strip().split() if t.strip().startswith("#")][:10]
-
-                    # 카테고리 DB에서 5개 랜덤 선택 (AI와 중복 제거)
-                    cat_pool = CATEGORY_HASHTAGS.get(pcat, CATEGORY_HASHTAGS["기타"])
-                    cat_available = [t for t in cat_pool if t not in ai_tags]
-                    import random as _rnd
-                    cat_tags = _rnd.sample(cat_available, min(5, len(cat_available)))
-
-                    # 공통 필수 5개 (중복 제거)
-                    common_tags = [t for t in COMMON_HASHTAGS if t not in ai_tags and t not in cat_tags]
-
-                    # 합치기 (중복 제거, 최대 20개)
-                    all_tags = []
-                    seen_tags = set()
-                    for t in common_tags + ai_tags + cat_tags:
-                        if t not in seen_tags:
-                            all_tags.append(t)
-                            seen_tags.add(t)
-                    all_tags = all_tags[:20]
-
-                    st.session_state.hashtag_list = all_tags
-                    # 전체 선택 상태로 초기화
-                    st.session_state.hashtag_selections = {t: True for t in all_tags}
-                    st.session_state.coupang_hashtags = " ".join(all_tags)
-                    st.rerun()
-                else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
-
-        if st.session_state.hashtag_list:
-            st.markdown("**해시태그 선택** — 체크박스로 포함/제외 가능")
-
-            # 전체선택 / 전체해제 버튼
-            ht_btn1, ht_btn2, ht_btn3 = st.columns(3)
-            with ht_btn1:
-                if st.button("✅ 전체 선택", key="ht_all"):
-                    st.session_state.hashtag_selections = {t: True for t in st.session_state.hashtag_list}
-                    st.rerun()
-            with ht_btn2:
-                if st.button("⬜ 전체 해제", key="ht_none"):
-                    st.session_state.hashtag_selections = {t: False for t in st.session_state.hashtag_list}
-                    st.rerun()
-            with ht_btn3:
-                selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
-                st.metric("선택됨", f"{len(selected_tags)}개")
-
-            # 4열 체크박스 그리드
-            tag_cols_per_row = 4
-            for row_start in range(0, len(st.session_state.hashtag_list), tag_cols_per_row):
-                row_tags = st.session_state.hashtag_list[row_start:row_start+tag_cols_per_row]
-                ht_cols = st.columns(tag_cols_per_row)
-                for col_idx, tag in enumerate(row_tags):
-                    with ht_cols[col_idx]:
-                        # 공통 태그는 라벨 구분
-                        label = f"{tag} 🔒" if tag in COMMON_HASHTAGS else tag
-                        checked = st.session_state.hashtag_selections.get(tag, True)
-                        st.session_state.hashtag_selections[tag] = st.checkbox(label, value=checked, key=f"ht_{tag}")
-
-            # 선택된 해시태그 복사용 출력
-            selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
-            st.session_state.coupang_hashtags = " ".join(selected_tags)
-            st.markdown("**📋 복사용 (선택된 해시태그):**")
-            st.code(st.session_state.coupang_hashtags, language=None)
-
-        st.markdown("---")
-
-        # 5. 유튜브/인스타 설명란
-        st.markdown("#### 5️⃣ 유튜브 / 인스타 설명란 자동 생성")
-        if st.button("✨ 설명란 자동 생성", key="gen_desc"):
-            with st.spinner("설명란 생성 중..."):
-                aff_link = st.session_state.coupang_affiliate_link
-                link_instruction = ""
-                if aff_link:
-                    link_instruction = f"\n\n중요: 아래 쿠팡 파트너스 링크를 설명란에 반드시 포함해줘:\n{aff_link}\n유튜브 설명란에는 '쿠팡에서 확인하기 👇' 바로 아래에, 인스타 설명란에는 '프로필 링크' 대신 이 링크를 넣어줘."
-                result = call_claude(
-                    "SNS 마케팅 카피라이터. 설명란만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n해시태그: {st.session_state.coupang_hashtags}\n\n유튜브 쇼츠 + 인스타 릴스용 설명란을 각각 작성해줘.\n\n[유튜브 설명란]\n- 제품 한줄 소개\n- '쿠팡에서 확인하기 👇' (링크 자리)\n- 해시태그\n\n[인스타 설명란]\n- 감성적 한줄 + 이모지\n- 제품 특징 3줄\n- '프로필 링크에서 확인하세요 🔗'\n- 해시태그{link_instruction}"
-                )
-                if result:
-                    st.session_state.coupang_desc = result
-                else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
-
-        if st.session_state.coupang_desc:
-            st.code(st.session_state.coupang_desc, language=None)
-
-        st.markdown("---")
-
-        # 6. 제품 이미지 자동 추출 연동
-        st.markdown("#### 6️⃣ 제품 이미지 추출 → 영상 소스 탭으로")
-        if coupang_url:
-            if st.button("📸 이 URL에서 이미지 추출하기", key="extract_imgs_coupang"):
-                with st.spinner("제품 이미지 추출 중..."):
-                    imgs = extract_product_images(coupang_url)
-                    if imgs:
-                        st.session_state.product_images = imgs
-                        st.success(f"✅ {len(imgs)}개 이미지 추출 → '📸 영상 소스' 탭에서 확인")
-                    else:
-                        st.warning("이미지 추출 실패 — 영상 소스 탭에서 직접 업로드하세요")
-        else:
-            st.info("위에서 쿠팡 URL을 입력하면 이미지를 자동 추출할 수 있어요.")
-
-
-# ═════════════════════════════════════════════════════════════════
-# TAB: 📸 영상 소스
-# ═════════════════════════════════════════════════════════════════
-with tab_source:
-    st.markdown('<div class="card"><div class="card-label">VIDEO SOURCES</div><h3>📸 영상 소스 — 이미지 & 배경 영상</h3></div>', unsafe_allow_html=True)
-
-    # ─── 섹션 A: 제품 이미지 자동 추출 (핵심) ───
-    st.markdown("### 🛒 섹션 A: 제품 이미지 자동 추출")
-    st.markdown('<div class="info-box">쿠팡/아마존 상품 URL을 입력하면 제품 이미지를 자동 추출하고, Ken Burns 효과로 영상화합니다.</div>', unsafe_allow_html=True)
-
-    src_url = st.text_input("상품 URL (쿠팡/아마존)", placeholder="https://www.coupang.com/vp/products/...", key="src_url_input")
-    sa1, sa2 = st.columns([1, 3])
-    with sa1:
-        do_img_extract = st.button("📸 이미지 추출", use_container_width=True)
-
-    if do_img_extract and src_url:
-        with st.spinner("제품 이미지 추출 중..."):
-            imgs = extract_product_images(src_url)
-            if imgs:
-                st.session_state.product_images = imgs
-                st.success(f"✅ {len(imgs)}개 이미지 추출 완료!")
-            else:
-                st.warning("이미지 추출 실패 — 쿠팡의 봇 차단 정책 때문일 수 있어요. 아래에서 직접 업로드하세요.")
+                    st.warning("이미지 추출 실패 — 쿠팡의 봇 차단 정책 때문일 수 있어요. 아래에서 직접 업로드하세요.")
+    else:
+        st.info("위에서 상품 URL을 입력하면 이미지를 자동 추출할 수 있어요.")
 
     if st.session_state.product_images:
         st.markdown(f"**추출된 이미지 ({len(st.session_state.product_images)}개)**")
@@ -1321,7 +1080,7 @@ with tab_source:
                             "dur_sec": dur,
                             "source": "kenburns",
                         })
-                        st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → 클립 탭에 자동 추가됨")
+                        st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → STEP 3 클립에 자동 추가됨")
                         st.video(out_path)
                     else:
                         st.error(f"❌ 영상 생성 실패: {err}")
@@ -1330,8 +1089,8 @@ with tab_source:
 
     st.markdown("---")
 
-    # ─── 섹션 B: 이미지 직접 업로드 ───
-    st.markdown("### 🖼️ 섹션 B: 이미지 직접 업로드")
+    # ─── 이미지 직접 업로드 ───
+    st.markdown("### 🖼️ 이미지 직접 업로드")
     uploaded_imgs = st.file_uploader("이미지 업로드 (여러 개 가능)", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True, key="img_uploader")
 
     if uploaded_imgs:
@@ -1363,15 +1122,15 @@ with tab_source:
                         "dur_sec": dur,
                         "source": "kenburns",
                     })
-                    st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → 클립 탭에 자동 추가됨")
+                    st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → STEP 3 클립에 자동 추가됨")
                     st.video(out_path)
                 else:
                     st.error(f"❌ 영상 생성 실패: {err}")
 
     st.markdown("---")
 
-    # ─── 섹션 C: Pexels 배경 영상 (보조) ───
-    st.markdown("### 🎬 섹션 C: Pexels 배경 영상 (인트로/아웃트로용)")
+    # ─── Pexels 배경 영상 ───
+    st.markdown("### 🎬 Pexels 배경 영상 (인트로/아웃트로용)")
 
     if not has_key("PEXELS_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ PEXELS_API_KEY 필요 — Secrets에 등록하세요</div>', unsafe_allow_html=True)
@@ -1437,10 +1196,218 @@ with tab_source:
 
 
 # ═════════════════════════════════════════════════════════════════
-# TAB: 클립 & 순서
+# STEP 2: 콘텐츠
 # ═════════════════════════════════════════════════════════════════
-with tab_clips:
-    st.markdown('<div class="card"><div class="card-label">STEP 01</div><h3>📁 클립 업로드 & 순서 조정</h3></div>', unsafe_allow_html=True)
+with tab_step2:
+    st.markdown('<div class="card"><div class="card-label">STEP 02</div><h3>✍️ 콘텐츠 — 제목 · 스크립트 · 후킹</h3></div>', unsafe_allow_html=True)
+
+    if not has_key("ANTHROPIC_API_KEY"):
+        st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
+
+    # ── AI 제목 9개 생성 (쿠팡 전용) ──
+    if st.session_state.coupang_product:
+        pname = st.session_state.coupang_product
+        pcat = st.session_state.coupang_category
+
+        st.markdown("#### 1️⃣ AI 제목 자동 생성 (9개)")
+        st.markdown('<div class="info-box">3가지 유형 × 3개씩 = 총 9개 제목을 AI가 생성합니다. 📌 버튼으로 원하는 제목을 바로 적용하세요.</div>', unsafe_allow_html=True)
+
+        if st.button("✨ AI 제목 9개 생성", key="gen_titles"):
+            with st.spinner("3가지 유형 × 3개 제목 생성 중..."):
+                cmode = st.session_state.content_mode
+                mode_emphasis = {
+                    "클릭유도형": "궁금증 유발형을 특히 강렬하게 만들어줘.",
+                    "구매전환형": "혜택강조형을 특히 매력적으로 만들어줘.",
+                    "리뷰형": "문제해결형을 실제 사용 경험 중심으로 만들어줘.",
+                    "비교형": "궁금증 유발형에 비교 요소를 넣어줘.",
+                    "문제해결형": "문제해결형을 가장 공감가게 만들어줘.",
+                    "바이럴형": "궁금증 유발형을 밈/유머 스타일로 만들어줘.",
+                }
+                result = call_claude(
+                    "숏폼 제목 전문가. 정확히 아래 형식으로 출력. 제목만 출력.",
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n{mode_emphasis.get(cmode, '')}\n\n아래 3가지 유형별로 각 3개씩 총 9개의 숏폼 제목을 만들어줘.\n\n[궁금증유발]\n- '이거 모르면 손해', '진짜 이게 돼?' 같은 호기심 자극 스타일\n[문제해결]\n- '이것 때문에 고민 끝', '해결한 제품' 같은 솔루션 제시 스타일\n[혜택강조]\n- '이 가격에?', '가성비 끝판왕' 같은 가격/혜택 강조 스타일\n\n조건:\n- 각 제목 15자 이내\n- 이모지 1개 포함\n- 유형 라벨 없이, 3줄 빈 줄로 유형 구분\n- 총 9줄 출력 (유형당 3줄)"
+                )
+                if result:
+                    lines = [l.strip() for l in result.strip().split("\n") if l.strip()]
+                    titles = []
+                    type_names = ["궁금증유발", "문제해결", "혜택강조"]
+                    type_idx = 0
+                    count = 0
+                    for l in lines:
+                        clean = l.lstrip("0123456789.-) ·•")
+                        if clean.startswith("[") or clean.startswith("【"):
+                            continue
+                        if clean:
+                            ttype = type_names[min(type_idx, 2)]
+                            titles.append({"text": clean, "type": ttype})
+                            count += 1
+                            if count % 3 == 0:
+                                type_idx += 1
+                    st.session_state.generated_titles = titles[:9]
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        if st.session_state.generated_titles:
+            type_badges = {"궁금증유발": "badge-red", "문제해결": "badge-blue", "혜택강조": "badge-green"}
+            current_type = ""
+            for ti, title_item in enumerate(st.session_state.generated_titles):
+                ttype = title_item.get("type", "")
+                if ttype != current_type:
+                    current_type = ttype
+                    badge_cls = type_badges.get(ttype, "badge-gray")
+                    st.markdown(f'<span class="badge {badge_cls}" style="margin-top:8px;">{ttype}</span>', unsafe_allow_html=True)
+                tc1, tc2 = st.columns([5, 1])
+                with tc1:
+                    st.markdown(f"&nbsp;&nbsp;`{title_item['text']}`")
+                with tc2:
+                    if st.button("📌 적용", key=f"title_{ti}", use_container_width=True):
+                        st.session_state.selected_title = title_item["text"]
+                        st.session_state.coupang_titles = title_item["text"]
+                        st.success(f"✅ 제목 적용됨!")
+                        st.rerun()
+
+            if st.session_state.selected_title:
+                st.markdown(f'<div class="info-box">현재 적용된 제목: <strong>{st.session_state.selected_title}</strong></div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── 쿠팡 스크립트 자동 생성 ──
+        st.markdown("#### 📋 쿠팡 30~45초 스크립트 자동 생성")
+        if st.button("✨ AI 스크립트 생성", key="gen_coupang_script"):
+            with st.spinner("스크립트 생성 중..."):
+                cmode = st.session_state.content_mode
+                mode_guide = {
+                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도. 첫 문장에 '이걸 모르면...' 같은 호기심 자극.",
+                    "구매전환형": "할인·한정·혜택 강조. CTA에서 즉시 구매 촉진. '지금 안 사면 후회' 느낌.",
+                    "리뷰형": "실제 사용 경험 중심. 장점·단점 솔직하게. 신뢰감 있는 톤.",
+                    "비교형": "경쟁 제품 대비 차별점 강조. 'A vs B' 구조. 데이터·수치 활용.",
+                    "문제해결형": "일상 불편함 제시 → 이 제품이 해결. before/after 느낌.",
+                    "바이럴형": "밈·유머·감성 자극. 공유하고 싶은 콘텐츠. 트렌디한 표현.",
+                }
+                result = call_claude(
+                    "쿠팡 파트너스 숏폼 스크립트 전문가. 스크립트만 출력.",
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
+                )
+                if result:
+                    st.session_state.coupang_script = result
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        if st.session_state.coupang_script:
+            st.session_state.coupang_script = st.text_area(
+                "스크립트 (수정 가능)", value=st.session_state.coupang_script, height=180
+            )
+            if st.button("📋 이 스크립트를 메인 스크립트에 적용", key="apply_script"):
+                st.session_state.script = st.session_state.coupang_script
+                st.success("✅ 메인 스크립트에 적용됨!")
+
+        st.markdown("---")
+
+    # ── 후킹 문구 + 메인 스크립트 ──
+    pn = st.session_state.get("_w_pname", "") or st.session_state.coupang_product
+    if not pn:
+        st.warning("⚠️ STEP 1에서 제품명을 입력하거나, 쿠팡 URL을 먼저 추출하세요.")
+    else:
+        t1, t2 = st.columns(2)
+        with t1:
+            tone = st.selectbox("톤", ["🔥 강렬하게", "😊 친근하게", "💎 고급스럽게", "📢 구매유도형"])
+        with t2:
+            lang = st.selectbox("언어", ["한국어", "영어", "한국어+영어 혼용"])
+
+        # ── 첫 3초 후킹 문구 ──
+        st.markdown("---")
+        st.markdown('<div class="card"><div class="card-label">HOOK</div><h3>🪝 첫 3초 후킹 문구</h3></div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">시청자를 멈추게 하는 첫 3초! AI가 콘텐츠 목적에 맞는 후킹 문구 5개를 제안합니다.</div>', unsafe_allow_html=True)
+
+        cmode = st.session_state.content_mode
+        _pdesc = st.session_state.get("_w_pdesc", "") or ""
+        if st.button("🪝 후킹 문구 5개 생성", key="gen_hooks"):
+            with st.spinner("후킹 문구 생성 중..."):
+                hook_result = call_claude(
+                    "숏폼 후킹 전문가. 번호 매기지 말고 한 줄씩만 출력. 각 줄이 하나의 후킹 문구.",
+                    f"제품: {pn}\n설명: {_pdesc or '없음'}\n카테고리: {st.session_state.coupang_category or '일반'}\n콘텐츠 목적: {cmode}\n\n이 제품의 숏폼 영상 '첫 3초 후킹 문구' 5개를 만들어줘.\n\n조건:\n- '{cmode}' 스타일에 맞게 작성\n- 시청자가 스크롤을 멈추고 보게 만드는 한 줄\n- 15자 이내, 짧고 강렬하게\n- 이모지 1개 포함 가능\n- 궁금증/충격/공감/유머 활용\n- 숫자 매기지 말고 문구만 출력"
+                )
+                if hook_result:
+                    hooks = [h.strip().lstrip("0123456789.-) ") for h in hook_result.strip().split("\n") if h.strip()]
+                    st.session_state.hook_suggestions = hooks[:5]
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 후킹 문구 생성 불가</div>', unsafe_allow_html=True)
+
+        if st.session_state.hook_suggestions:
+            st.markdown(f"**`{cmode}` 스타일 후킹 문구:**")
+            for hi, hook in enumerate(st.session_state.hook_suggestions):
+                hc1, hc2 = st.columns([5, 1])
+                with hc1:
+                    st.markdown(f"&nbsp;&nbsp;`{hook}`")
+                with hc2:
+                    if st.button("📌 적용", key=f"hook_{hi}", use_container_width=True):
+                        st.session_state.selected_hook = hook
+                        if st.session_state.script:
+                            st.session_state.script = hook + "\n\n" + st.session_state.script
+                        else:
+                            st.session_state.script = hook + "\n\n"
+                        st.success(f"✅ 후킹 문구 적용됨: '{hook}'")
+                        st.rerun()
+
+            if st.session_state.selected_hook:
+                st.markdown(f'<div class="info-box">현재 적용된 훅: <strong>{st.session_state.selected_hook}</strong></div>', unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # ── AI 스크립트 생성 ──
+        if st.button("🤖 AI 스크립트 생성"):
+            with st.spinner("생성 중..."):
+                cmode = st.session_state.content_mode
+                mode_guide = {
+                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도",
+                    "구매전환형": "할인·한정·혜택 강조, 즉시 구매 촉진",
+                    "리뷰형": "실제 사용 경험 중심, 장점·단점 솔직하게",
+                    "비교형": "경쟁 제품 대비 차별점 강조, 데이터 활용",
+                    "문제해결형": "일상 불편함 → 이 제품이 해결, before/after",
+                    "바이럴형": "밈·유머·감성 자극, 공유하고 싶은 콘텐츠",
+                }
+                hook_instruction = ""
+                if st.session_state.selected_hook:
+                    hook_instruction = f"\n첫 문장은 반드시 이것으로 시작해: '{st.session_state.selected_hook}'"
+                result = call_claude(
+                    "숏폼 광고 카피라이터. 스크립트만 출력.",
+                    f"제품:{pn}\n설명:{_pdesc or '없음'}\n톤:{tone}\n언어:{lang}\n길이:{target_dur}초\n콘텐츠 목적:{cmode}\n스타일 가이드:{mode_guide.get(cmode, '')}\n조건:'{cmode}' 목적에 맞게, 첫 문장 강렬, 구매유도, 짧은 문장{hook_instruction}"
+                )
+                if result:
+                    st.session_state.script = result
+                    st.session_state.script_history.append({"v": len(st.session_state.script_history)+1, "text": result, "note": "최초 생성"})
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 스크립트 생성 불가</div>', unsafe_allow_html=True)
+
+        if st.session_state.script:
+            st.session_state.script = st.text_area("📝 스크립트 (직접 수정 가능)", value=st.session_state.script, height=120)
+
+            req_col1, req_col2 = st.columns([4, 1])
+            with req_col1:
+                s_req = st.text_input("AI 수정 요청", placeholder="예: 더 짧게 / 더 재미있게 / 마지막에 가격 추가", label_visibility="collapsed", key="s_req")
+            with req_col2:
+                apply_s = st.button("✨ 반영", key="apply_s", use_container_width=True)
+
+            if apply_s and s_req:
+                with st.spinner("수정 중..."):
+                    result = call_claude(
+                        "스크립트 편집 전문가. 수정된 스크립트만 출력.",
+                        f"현재 스크립트:\n{st.session_state.script}\n\n수정 요청: {s_req}"
+                    )
+                    if result:
+                        st.session_state.script = result
+                        st.session_state.script_history.append({"v": len(st.session_state.script_history)+1, "text": result, "note": s_req})
+                        st.rerun()
+
+
+# ═════════════════════════════════════════════════════════════════
+# STEP 3: 영상 편집
+# ═════════════════════════════════════════════════════════════════
+with tab_step3:
+    st.markdown('<div class="card"><div class="card-label">STEP 03</div><h3>🎬 영상 편집 — 클립 · TTS · 자막 · BGM · 조립</h3></div>', unsafe_allow_html=True)
+
+    # ── 클립 업로드 & 순서 조정 ──
+    st.markdown("#### 📁 클립 업로드 & 순서 조정")
 
     uploaded = st.file_uploader("클립 업로드 (여러 개 가능)", type=["mp4", "mov", "avi"], accept_multiple_files=True, key="clip_uploader")
     if uploaded:
@@ -1495,119 +1462,34 @@ with tab_clips:
         with cc:
             st.metric("🎯 목표", f"{target_dur}초")
 
-        if st.button("✅ 순서 확정 →"):
+        if st.button("✅ 순서 확정"):
             st.session_state.clip_order = [c["path"] for c in clips]
-            st.success(f"✅ {len(clips)}개 확정! 탭 ②로 이동하세요.")
+            st.success(f"✅ {len(clips)}개 확정!")
     else:
-        st.markdown('<div style="text-align:center;padding:40px 0;color:#8b95a1;">📂 영상 검색 탭에서 검색하거나 직접 업로드하세요</div>', unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;padding:40px 0;color:#8b95a1;">📂 STEP 1에서 영상을 검색/생성하거나 위에서 직접 업로드하세요</div>', unsafe_allow_html=True)
 
-
-# ═════════════════════════════════════════════════════════════════
-# TAB: 스크립트 & TTS
-# ═════════════════════════════════════════════════════════════════
-with tab_script:
-    st.markdown('<div class="card"><div class="card-label">STEP 02</div><h3>✍️ AI 스크립트 & 🎙️ TTS 음성</h3></div>', unsafe_allow_html=True)
-
-    if not has_key("ANTHROPIC_API_KEY"):
-        st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
-
-    pn = product_name or st.session_state.coupang_product
-    if not pn:
-        st.warning("⚠️ 사이드바에서 제품명을 입력하거나, 쿠팡 파트너스 탭을 먼저 이용하세요.")
-    else:
-        t1, t2 = st.columns(2)
-        with t1:
-            tone = st.selectbox("톤", ["🔥 강렬하게", "😊 친근하게", "💎 고급스럽게", "📢 구매유도형"])
-        with t2:
-            lang = st.selectbox("언어", ["한국어", "영어", "한국어+영어 혼용"])
-
-        # ── 첫 3초 후킹 문구 (Hook 템플릿) ──
-        st.markdown("---")
-        st.markdown('<div class="card"><div class="card-label">HOOK</div><h3>🪝 첫 3초 후킹 문구</h3></div>', unsafe_allow_html=True)
-        st.markdown('<div class="info-box">시청자를 멈추게 하는 첫 3초! AI가 콘텐츠 목적에 맞는 후킹 문구 5개를 제안합니다.</div>', unsafe_allow_html=True)
-
-        cmode = st.session_state.content_mode
-        if st.button("🪝 후킹 문구 5개 생성", key="gen_hooks"):
-            with st.spinner("후킹 문구 생성 중..."):
-                hook_result = call_claude(
-                    "숏폼 후킹 전문가. 번호 매기지 말고 한 줄씩만 출력. 각 줄이 하나의 후킹 문구.",
-                    f"제품: {pn}\n설명: {product_desc or '없음'}\n카테고리: {st.session_state.coupang_category or '일반'}\n콘텐츠 목적: {cmode}\n\n이 제품의 숏폼 영상 '첫 3초 후킹 문구' 5개를 만들어줘.\n\n조건:\n- '{cmode}' 스타일에 맞게 작성\n- 시청자가 스크롤을 멈추고 보게 만드는 한 줄\n- 15자 이내, 짧고 강렬하게\n- 이모지 1개 포함 가능\n- 궁금증/충격/공감/유머 활용\n- 숫자 매기지 말고 문구만 출력"
-                )
-                if hook_result:
-                    hooks = [h.strip().lstrip("0123456789.-) ") for h in hook_result.strip().split("\n") if h.strip()]
-                    st.session_state.hook_suggestions = hooks[:5]
-                else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 후킹 문구 생성 불가</div>', unsafe_allow_html=True)
-
-        if st.session_state.hook_suggestions:
-            st.markdown(f"**`{cmode}` 스타일 후킹 문구:**")
-            for hi, hook in enumerate(st.session_state.hook_suggestions):
-                hc1, hc2 = st.columns([5, 1])
-                with hc1:
-                    st.markdown(f"&nbsp;&nbsp;`{hook}`")
-                with hc2:
-                    if st.button("📌 적용", key=f"hook_{hi}", use_container_width=True):
-                        st.session_state.selected_hook = hook
-                        # 스크립트 첫 줄에 후킹 문구 삽입
-                        if st.session_state.script:
-                            st.session_state.script = hook + "\n\n" + st.session_state.script
-                        else:
-                            st.session_state.script = hook + "\n\n"
-                        st.success(f"✅ 후킹 문구 적용됨: '{hook}'")
-                        st.rerun()
-
-            if st.session_state.selected_hook:
-                st.markdown(f'<div class="info-box">현재 적용된 훅: <strong>{st.session_state.selected_hook}</strong></div>', unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        if st.button("🤖 AI 스크립트 생성"):
-            with st.spinner("생성 중..."):
-                cmode = st.session_state.content_mode
-                mode_guide = {
-                    "클릭유도형": "궁금증과 충격적 표현으로 클릭 유도",
-                    "구매전환형": "할인·한정·혜택 강조, 즉시 구매 촉진",
-                    "리뷰형": "실제 사용 경험 중심, 장점·단점 솔직하게",
-                    "비교형": "경쟁 제품 대비 차별점 강조, 데이터 활용",
-                    "문제해결형": "일상 불편함 → 이 제품이 해결, before/after",
-                    "바이럴형": "밈·유머·감성 자극, 공유하고 싶은 콘텐츠",
-                }
-                hook_instruction = ""
-                if st.session_state.selected_hook:
-                    hook_instruction = f"\n첫 문장은 반드시 이것으로 시작해: '{st.session_state.selected_hook}'"
-                result = call_claude(
-                    "숏폼 광고 카피라이터. 스크립트만 출력.",
-                    f"제품:{pn}\n설명:{product_desc or '없음'}\n톤:{tone}\n언어:{lang}\n길이:{target_dur}초\n콘텐츠 목적:{cmode}\n스타일 가이드:{mode_guide.get(cmode, '')}\n조건:'{cmode}' 목적에 맞게, 첫 문장 강렬, 구매유도, 짧은 문장{hook_instruction}"
-                )
-                if result:
-                    st.session_state.script = result
-                    st.session_state.script_history.append({"v": len(st.session_state.script_history)+1, "text": result, "note": "최초 생성"})
-                else:
-                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 스크립트 생성 불가</div>', unsafe_allow_html=True)
-
-        if st.session_state.script:
-            st.session_state.script = st.text_area("📝 스크립트 (직접 수정 가능)", value=st.session_state.script, height=120)
-
-            req_col1, req_col2 = st.columns([4, 1])
-            with req_col1:
-                s_req = st.text_input("AI 수정 요청", placeholder="예: 더 짧게 / 더 재미있게 / 마지막에 가격 추가", label_visibility="collapsed", key="s_req")
-            with req_col2:
-                apply_s = st.button("✨ 반영", key="apply_s", use_container_width=True)
-
-            if apply_s and s_req:
-                with st.spinner("수정 중..."):
-                    result = call_claude(
-                        "스크립트 편집 전문가. 수정된 스크립트만 출력.",
-                        f"현재 스크립트:\n{st.session_state.script}\n\n수정 요청: {s_req}"
-                    )
-                    if result:
-                        st.session_state.script = result
-                        st.session_state.script_history.append({"v": len(st.session_state.script_history)+1, "text": result, "note": s_req})
-                        st.rerun()
-
-    # TTS
+    # ── TTS 설정 & 생성 ──
     st.markdown("---")
-    st.markdown('<div class="card"><div class="card-label">STEP 03</div><h3>🎙️ TTS 음성 생성</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="card"><div class="card-label">TTS</div><h3>🎙️ TTS 음성 생성</h3></div>', unsafe_allow_html=True)
+
+    with st.expander("🎙️ TTS 설정", expanded=False):
+        tts_engine = st.radio("TTS 엔진", ["🇰🇷 클로바 (한국어)", "🌍 ElevenLabs"], horizontal=True)
+        if "클로바" in tts_engine:
+            tts_voice = st.selectbox("클로바 음성", [
+                "nara - 여성 (자연스러움)", "jinho - 남성 (신뢰감)",
+                "nbora - 밝은 여성", "ndain - 차분한 남성",
+            ])
+            elevenlabs_voice_id = None
+        else:
+            el_voices = {
+                "Rachel (여성, 차분)": "21m00Tcm4TlvDq8ikWAM",
+                "Bella (여성, 밝음)": "EXAVITQu4vr4xnSDxMaL",
+                "Antoni (남성, 신뢰감)": "ErXwobaYiN019PkySvjV",
+                "Josh (남성, 젊음)": "TxGEqnHWrfWFTfGW9XjX",
+            }
+            tts_voice = st.selectbox("ElevenLabs 음성", list(el_voices.keys()))
+            elevenlabs_voice_id = el_voices[tts_voice]
+        tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
 
     if st.session_state.script:
         if "클로바" in tts_engine:
@@ -1678,14 +1560,11 @@ with tab_script:
                     st.session_state.tts_done = True
                     st.audio(tts_output_path)
     else:
-        st.info("스크립트를 먼저 생성해주세요.")
+        st.info("STEP 2에서 스크립트를 먼저 생성해주세요.")
 
-
-# ═════════════════════════════════════════════════════════════════
-# TAB: 자막 & 편집
-# ═════════════════════════════════════════════════════════════════
-with tab_sub:
-    st.markdown('<div class="card"><div class="card-label">STEP 04</div><h3>📝 자막 생성 & 🎬 영상 조립</h3></div>', unsafe_allow_html=True)
+    # ── 자막 설정 & 생성 ──
+    st.markdown("---")
+    st.markdown('<div class="card"><div class="card-label">SUBTITLE</div><h3>📝 자막 생성</h3></div>', unsafe_allow_html=True)
 
     sub_c1, sub_c2, sub_c3 = st.columns(3)
     with sub_c1:
@@ -1705,13 +1584,11 @@ with tab_sub:
             lines = [l.strip() for l in st.session_state.script.split("\n") if l.strip()]
             subs = []
             t = 0.0
-            # 1차: 한국어 기준 글자당 0.25초로 계산
             for l in lines:
                 d = max(1.5, len(l) * 0.25)
                 subs.append({"start": round(t, 1), "end": round(t + d, 1), "text": l})
                 t += d + 0.3
 
-            # 2차: TTS mp3가 있으면 실제 음성 길이에 맞게 비율 조정
             tts_path = os.path.join(TMPDIR, "tts_output.mp3")
             if st.session_state.tts_done and os.path.exists(tts_path):
                 tts_dur = get_audio_duration(tts_path)
@@ -1727,9 +1604,8 @@ with tab_sub:
             st.session_state.sample_subs = subs
             st.session_state.subtitle_done = True
 
-            # ASS 자막 파일 자동 생성
             fontpath = find_korean_font()
-            pn_for_highlight = product_name or st.session_state.coupang_product or ""
+            pn_for_highlight = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or ""
             ass_result = generate_ass_subtitle(
                 subs, fontpath, product_name=pn_for_highlight,
                 sub_size=sub_size, sub_pos=sub_pos, sub_col=sub_col,
@@ -1743,7 +1619,7 @@ with tab_sub:
                 st.session_state.ass_path = ""
                 st.success("✅ 자막 생성 완료! (ASS 파일 생성 실패 → drawtext fallback)")
         else:
-            st.warning("스크립트를 먼저 생성해주세요.")
+            st.warning("STEP 2에서 스크립트를 먼저 생성해주세요.")
 
     if st.session_state.subtitle_done and st.session_state.sample_subs:
         st.markdown("**📋 자막 목록** — 직접 수정 가능")
@@ -1758,7 +1634,7 @@ with tab_sub:
                     st.session_state.sample_subs.pop(i)
                     st.rerun()
 
-    # ── BGM 자동 검색 & 선택 ──
+    # ── BGM ──
     st.markdown("---")
     st.markdown('<div class="card"><div class="card-label">BGM</div><h3>🎵 BGM 배경 음악 (선택사항)</h3></div>', unsafe_allow_html=True)
 
@@ -1801,7 +1677,6 @@ with tab_sub:
                     st.markdown('<span class="badge badge-green">✓ 선택됨</span>', unsafe_allow_html=True)
                 else:
                     if st.button("✅ 선택", key=f"sel_bgm_{bi}", use_container_width=True):
-                        # BGM 다운로드
                         bgm_dir = _ensure_dir("shortform_bgm")
                         bgm_dest = bgm_dir / f"bgm_{bgm['id']}.mp3"
                         with st.spinner("BGM 다운로드 중..."):
@@ -1818,15 +1693,13 @@ with tab_sub:
             st.session_state.selected_bgm = ""
             st.rerun()
 
-    # ── CTA 오버레이 (선택사항) ──
+    # ── CTA 오버레이 ──
     st.markdown("---")
     st.markdown('<div class="card"><div class="card-label">CTA</div><h3>📢 CTA 오버레이 (선택사항)</h3></div>', unsafe_allow_html=True)
     st.markdown('<div class="info-box">💡 영상 마지막 N초에 클릭유도 문구(CTA)를 표시합니다. 비워두면 CTA 없이 영상이 생성됩니다.</div>', unsafe_allow_html=True)
 
-    # 카테고리 자동 감지 → CTA 후보 목록
     cta_cat = st.session_state.coupang_category or "기타"
     cta_candidates = CTA_LIBRARY.get(cta_cat, []) + CTA_COMMON
-    # 중복 제거 (순서 유지)
     seen_cta = set()
     cta_unique = []
     for c in cta_candidates:
@@ -1853,13 +1726,13 @@ with tab_sub:
     if st.session_state.cta_text:
         st.markdown(f'<div class="info-box">📢 CTA: "<strong>{st.session_state.cta_text}</strong>" — 마지막 {st.session_state.cta_duration}초, {st.session_state.cta_position}</div>', unsafe_allow_html=True)
 
-    # 영상 조립
+    # ── 최종 영상 조립 ──
     st.markdown("---")
-    st.markdown('<div class="card"><div class="card-label">STEP 05</div><h3>🎬 최종 영상 조립</h3></div>', unsafe_allow_html=True)
+    st.markdown('<div class="card"><div class="card-label">ASSEMBLE</div><h3>🎬 최종 영상 조립</h3></div>', unsafe_allow_html=True)
 
     has_clips = bool(st.session_state.clips)
     if not has_clips:
-        st.info("클립을 먼저 추가해주세요 (탭 ①)")
+        st.info("STEP 1에서 클립을 먼저 추가해주세요")
     else:
         st.markdown(f"**{len(st.session_state.clips)}개 클립** · 목표 {target_dur}초 · {'TTS ✅' if st.session_state.tts_done else 'TTS 없음'}")
 
@@ -1870,7 +1743,6 @@ with tab_sub:
             stat.text("📂 클립 확인 중...")
             prog.progress(10)
 
-            # 실제 클립 파일 확인
             valid = [c for c in st.session_state.clips if os.path.exists(c["path"])]
             if not valid:
                 st.error("❌ 다운로드된 클립 파일이 없습니다. 영상을 먼저 다운로드해주세요.")
@@ -1902,7 +1774,7 @@ with tab_sub:
                     prog.progress(100)
                     stat.text("✅ 완료!")
                     st.session_state.output_path = output
-                    st.success("🎉 영상 조립 완료! 탭 ④에서 다운로드하세요.")
+                    st.success("🎉 영상 조립 완료! STEP 5에서 다운로드하세요.")
                     st.video(output)
                 else:
                     prog.progress(100)
@@ -1910,57 +1782,118 @@ with tab_sub:
 
 
 # ═════════════════════════════════════════════════════════════════
-# TAB: 다운로드
+# STEP 4: 배포 준비
 # ═════════════════════════════════════════════════════════════════
-with tab_dl:
-    st.markdown('<div class="card"><div class="card-label">STEP 06</div><h3>💾 완성 영상 다운로드</h3></div>', unsafe_allow_html=True)
+with tab_step4:
+    st.markdown('<div class="card"><div class="card-label">STEP 04</div><h3>📢 배포 준비 — 해시태그 · 설명란 · 썸네일</h3></div>', unsafe_allow_html=True)
 
-    pn = product_name or st.session_state.coupang_product or "제품"
-    aff_link = st.session_state.coupang_affiliate_link
+    if not has_key("ANTHROPIC_API_KEY"):
+        st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
 
-    dc1, dc2 = st.columns(2)
-    with dc1:
-        auto_title = st.text_input("제목", value=f"{pn} 리뷰 | 이거 진짜 괜찮네요 #shorts")
-    with dc2:
-        auto_tags = st.text_input("해시태그", value=st.session_state.coupang_hashtags or f"#{pn} #숏폼 #리뷰 #shorts #viral #fyp")
+    # ── 해시태그 20개 ──
+    if st.session_state.coupang_product:
+        pname = st.session_state.coupang_product
+        pcat = st.session_state.coupang_category
 
-    # 설명란 기본값 구성 (쿠팡 파트너스 링크 자동 포함)
-    desc_base = st.session_state.coupang_desc or f"{product_desc or ''}"
-    if aff_link and aff_link not in desc_base:
-        desc_default = f"{desc_base}\n\n🛒 쿠팡에서 확인하기 👇\n{aff_link}\n\n{auto_tags}"
+        st.markdown("#### 1️⃣ 해시태그 자동 생성 (AI + DB)")
+        st.markdown('<div class="info-box">AI 맞춤 10개 + 카테고리 DB 5개 + 공통 필수 5개 = 총 20개 해시태그를 생성합니다.</div>', unsafe_allow_html=True)
+
+        if st.button("✨ 해시태그 20개 생성", key="gen_hashtags"):
+            with st.spinner("AI 해시태그 생성 + 카테고리 DB 조합 중..."):
+                cmode = st.session_state.content_mode
+                result = call_claude(
+                    "SNS 해시태그 전문가. 해시태그만 출력. # 붙여서 공백으로 구분. 딱 10개만.",
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n\n이 제품에 최적화된 해시태그 10개를 만들어줘.\n조건:\n- 제품 특성에 맞는 검색량 높은 키워드\n- '{cmode}' 목적에 맞는 태그 포함\n- #shorts #fyp #viral 중 2개 포함\n- 모두 # 붙여서 공백으로 구분\n- 딱 10개만 출력"
+                )
+                if result:
+                    ai_tags = [t.strip() for t in result.strip().split() if t.strip().startswith("#")][:10]
+
+                    cat_pool = CATEGORY_HASHTAGS.get(pcat, CATEGORY_HASHTAGS["기타"])
+                    cat_available = [t for t in cat_pool if t not in ai_tags]
+                    import random as _rnd
+                    cat_tags = _rnd.sample(cat_available, min(5, len(cat_available)))
+
+                    common_tags = [t for t in COMMON_HASHTAGS if t not in ai_tags and t not in cat_tags]
+
+                    all_tags = []
+                    seen_tags = set()
+                    for t in common_tags + ai_tags + cat_tags:
+                        if t not in seen_tags:
+                            all_tags.append(t)
+                            seen_tags.add(t)
+                    all_tags = all_tags[:20]
+
+                    st.session_state.hashtag_list = all_tags
+                    st.session_state.hashtag_selections = {t: True for t in all_tags}
+                    st.session_state.coupang_hashtags = " ".join(all_tags)
+                    st.rerun()
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        if st.session_state.hashtag_list:
+            st.markdown("**해시태그 선택** — 체크박스로 포함/제외 가능")
+
+            ht_btn1, ht_btn2, ht_btn3 = st.columns(3)
+            with ht_btn1:
+                if st.button("✅ 전체 선택", key="ht_all"):
+                    st.session_state.hashtag_selections = {t: True for t in st.session_state.hashtag_list}
+                    st.rerun()
+            with ht_btn2:
+                if st.button("⬜ 전체 해제", key="ht_none"):
+                    st.session_state.hashtag_selections = {t: False for t in st.session_state.hashtag_list}
+                    st.rerun()
+            with ht_btn3:
+                selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
+                st.metric("선택됨", f"{len(selected_tags)}개")
+
+            tag_cols_per_row = 4
+            for row_start in range(0, len(st.session_state.hashtag_list), tag_cols_per_row):
+                row_tags = st.session_state.hashtag_list[row_start:row_start+tag_cols_per_row]
+                ht_cols = st.columns(tag_cols_per_row)
+                for col_idx, tag in enumerate(row_tags):
+                    with ht_cols[col_idx]:
+                        label = f"{tag} 🔒" if tag in COMMON_HASHTAGS else tag
+                        checked = st.session_state.hashtag_selections.get(tag, True)
+                        st.session_state.hashtag_selections[tag] = st.checkbox(label, value=checked, key=f"ht_{tag}")
+
+            selected_tags = [t for t in st.session_state.hashtag_list if st.session_state.hashtag_selections.get(t, True)]
+            st.session_state.coupang_hashtags = " ".join(selected_tags)
+            st.markdown("**📋 복사용 (선택된 해시태그):**")
+            st.code(st.session_state.coupang_hashtags, language=None)
+
+        st.markdown("---")
+
+        # ── 설명란 자동 생성 ──
+        st.markdown("#### 2️⃣ 유튜브 / 인스타 설명란 자동 생성")
+        if st.button("✨ 설명란 자동 생성", key="gen_desc"):
+            with st.spinner("설명란 생성 중..."):
+                aff_link = st.session_state.coupang_affiliate_link
+                link_instruction = ""
+                if aff_link:
+                    link_instruction = f"\n\n중요: 아래 쿠팡 파트너스 링크를 설명란에 반드시 포함해줘:\n{aff_link}\n유튜브 설명란에는 '쿠팡에서 확인하기 👇' 바로 아래에, 인스타 설명란에는 '프로필 링크' 대신 이 링크를 넣어줘."
+                result = call_claude(
+                    "SNS 마케팅 카피라이터. 설명란만 출력.",
+                    f"제품: {pname}\n카테고리: {pcat}\n해시태그: {st.session_state.coupang_hashtags}\n\n유튜브 쇼츠 + 인스타 릴스용 설명란을 각각 작성해줘.\n\n[유튜브 설명란]\n- 제품 한줄 소개\n- '쿠팡에서 확인하기 👇' (링크 자리)\n- 해시태그\n\n[인스타 설명란]\n- 감성적 한줄 + 이모지\n- 제품 특징 3줄\n- '프로필 링크에서 확인하세요 🔗'\n- 해시태그{link_instruction}"
+                )
+                if result:
+                    st.session_state.coupang_desc = result
+                else:
+                    st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        if st.session_state.coupang_desc:
+            st.code(st.session_state.coupang_desc, language=None)
+
+        st.markdown("---")
     else:
-        desc_default = f"{desc_base}\n\n{auto_tags}" if desc_base else auto_tags
-    auto_desc = st.text_area("설명", value=desc_default, height=100)
-
-    if aff_link:
-        st.markdown(f'<div class="info-box">🔗 쿠팡 파트너스 링크가 설명란에 자동 포함되었습니다.</div>', unsafe_allow_html=True)
-
-    st.markdown("### 📥 플랫폼별 다운로드")
-    video_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
-
-    if not video_ready:
-        st.markdown('<div class="warn-box">⚠️ 탭 ③에서 영상 조립을 먼저 완료해주세요.</div>', unsafe_allow_html=True)
-
-    specs = [
-        ("▶ 유튜브 쇼츠", "1080×1920 · MP4", "badge-dark", f"{pn}_youtube_shorts.mp4"),
-        ("📸 인스타 릴스", "1080×1920 · MP4", "badge-blue", f"{pn}_instagram_reels.mp4"),
-        ("🎵 틱톡", "1080×1920 · MP4", "badge-green", f"{pn}_tiktok.mp4"),
-    ]
-    for name, spec, badge, fn in specs:
-        si1, si2 = st.columns([4, 1])
-        with si1:
-            st.markdown(f'<div class="card" style="margin-bottom:8px;"><strong>{name}</strong> &nbsp; <span class="badge {badge}">{spec}</span></div>', unsafe_allow_html=True)
-        with si2:
-            if video_ready:
-                with open(st.session_state.output_path, "rb") as f:
-                    st.download_button("⬇️ 다운로드", data=f.read(), file_name=fn, mime="video/mp4", use_container_width=True, key=f"dl_{name}")
-            else:
-                st.button("⬇️ 다운로드", disabled=True, use_container_width=True, key=f"dld_{name}")
+        st.info("STEP 1에서 쿠팡 제품을 먼저 등록하세요.")
+        st.markdown("---")
 
     # ── 썸네일 자동 생성 ──
-    st.markdown("---")
+    st.markdown("#### 3️⃣ 썸네일 반자동 생성")
     st.markdown('<div class="card"><div class="card-label">THUMBNAIL</div><h3>🖼️ 썸네일 반자동 생성</h3></div>', unsafe_allow_html=True)
     st.markdown('<div class="info-box">3가지 템플릿 + 2가지 해상도로 썸네일을 자동 생성합니다. 제품 이미지가 있으면 자동으로 활용됩니다.</div>', unsafe_allow_html=True)
+
+    pn = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or "제품"
 
     th_c1, th_c2 = st.columns(2)
     with th_c1:
@@ -1969,7 +1902,6 @@ with tab_dl:
     with th_c2:
         thumb_res = st.radio("해상도", ["유튜브 (1280x720)", "인스타 (1080x1080)", "둘 다"], horizontal=True, key="thumb_res")
 
-    # 기본 텍스트: 생성된 제목 → 제품명 순서로 자동 세팅
     default_main = ""
     if st.session_state.selected_title:
         default_main = st.session_state.selected_title
@@ -2018,6 +1950,55 @@ with tab_dl:
                         st.download_button(f"⬇️ {td['label']} 다운로드", data=f.read(),
                                            file_name=f"thumbnail_{td['label']}_{td['w']}x{td['h']}.png",
                                            mime="image/png", use_container_width=True, key=f"dl_thumb_{i}")
+
+
+# ═════════════════════════════════════════════════════════════════
+# STEP 5: 저장
+# ═════════════════════════════════════════════════════════════════
+with tab_step5:
+    st.markdown('<div class="card"><div class="card-label">STEP 05</div><h3>💾 완성 영상 다운로드</h3></div>', unsafe_allow_html=True)
+
+    pn = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or "제품"
+    aff_link = st.session_state.coupang_affiliate_link
+
+    dc1, dc2 = st.columns(2)
+    with dc1:
+        auto_title = st.text_input("제목", value=f"{pn} 리뷰 | 이거 진짜 괜찮네요 #shorts")
+    with dc2:
+        auto_tags = st.text_input("해시태그", value=st.session_state.coupang_hashtags or f"#{pn} #숏폼 #리뷰 #shorts #viral #fyp")
+
+    _pd = st.session_state.get("_w_pdesc", "") or ""
+    desc_base = st.session_state.coupang_desc or _pd
+    if aff_link and aff_link not in desc_base:
+        desc_default = f"{desc_base}\n\n🛒 쿠팡에서 확인하기 👇\n{aff_link}\n\n{auto_tags}"
+    else:
+        desc_default = f"{desc_base}\n\n{auto_tags}" if desc_base else auto_tags
+    auto_desc = st.text_area("설명", value=desc_default, height=100)
+
+    if aff_link:
+        st.markdown(f'<div class="info-box">🔗 쿠팡 파트너스 링크가 설명란에 자동 포함되었습니다.</div>', unsafe_allow_html=True)
+
+    st.markdown("### 📥 플랫폼별 다운로드")
+    video_ready = st.session_state.get("output_path") and os.path.exists(st.session_state.get("output_path", ""))
+
+    if not video_ready:
+        st.markdown('<div class="warn-box">⚠️ STEP 3에서 영상 조립을 먼저 완료해주세요.</div>', unsafe_allow_html=True)
+
+    specs = [
+        ("▶ 유튜브 쇼츠", "1080×1920 · MP4", "badge-dark", f"{pn}_youtube_shorts.mp4"),
+        ("📸 인스타 릴스", "1080×1920 · MP4", "badge-blue", f"{pn}_instagram_reels.mp4"),
+        ("🎵 틱톡", "1080×1920 · MP4", "badge-green", f"{pn}_tiktok.mp4"),
+    ]
+    for name, spec, badge, fn in specs:
+        si1, si2 = st.columns([4, 1])
+        with si1:
+            st.markdown(f'<div class="card" style="margin-bottom:8px;"><strong>{name}</strong> &nbsp; <span class="badge {badge}">{spec}</span></div>', unsafe_allow_html=True)
+        with si2:
+            if video_ready:
+                with open(st.session_state.output_path, "rb") as f:
+                    st.download_button("⬇️ 다운로드", data=f.read(), file_name=fn, mime="video/mp4", use_container_width=True, key=f"dl_{name}")
+            else:
+                st.button("⬇️ 다운로드", disabled=True, use_container_width=True, key=f"dld_{name}")
 
     st.markdown("---")
     with st.expander("🔑 필요한 API 키 안내"):
