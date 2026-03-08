@@ -1,6 +1,56 @@
 import streamlit as st
-import os, json, subprocess, tempfile, time, re, requests
+import os, json, subprocess, tempfile, time, re, requests, glob as globmod
 from pathlib import Path
+
+# ── 크로스 플랫폼 임시 디렉토리 ──────────────────────────────────────
+TMPDIR = tempfile.gettempdir()
+
+def _ensure_dir(name):
+    """TMPDIR 하위에 디렉토리 생성 후 Path 반환"""
+    p = Path(TMPDIR) / name
+    p.mkdir(exist_ok=True)
+    return p
+
+def find_korean_font():
+    """시스템에서 한글 폰트 경로를 자동 감지 (Nanum 우선)"""
+    candidates = [
+        "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+        "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
+        "C:/Windows/Fonts/malgun.ttf",
+        "C:/Windows/Fonts/gulim.ttc",
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    found = globmod.glob("/usr/share/fonts/**/*anum*.ttf", recursive=True)
+    if found:
+        return found[0]
+    return None
+
+def get_audio_duration(path):
+    """ffprobe로 오디오 파일 길이(초) 반환"""
+    try:
+        res = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=10
+        )
+        return float(json.loads(res.stdout)["format"]["duration"])
+    except:
+        return 0
+
+def generate_silent_audio(duration_sec, output_path):
+    """FFmpeg로 무음 mp3 생성 (데모 모드용)"""
+    try:
+        r = subprocess.run([
+            "ffmpeg", "-y", "-f", "lavfi", "-i", f"anullsrc=r=44100:cl=stereo",
+            "-t", str(duration_sec), "-c:a", "libmp3lame", "-b:a", "128k",
+            str(output_path)
+        ], capture_output=True, text=True, timeout=30)
+        return r.returncode == 0 and os.path.exists(output_path)
+    except:
+        return False
 
 st.set_page_config(page_title="숏폼 자동화 제작기", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
@@ -135,14 +185,13 @@ def get_video_duration(path):
         return 0
 
 def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
-    """FFmpeg로 실제 영상 조립"""
-    tmp = Path("/tmp/shortform_build")
-    tmp.mkdir(exist_ok=True)
+    """FFmpeg로 실제 영상 조립 (에러 체크 포함)"""
+    tmp = _ensure_dir("shortform_build")
 
     # 1. 클립 파일 확인
     valid_clips = [c for c in clips if os.path.exists(c["path"])]
     if not valid_clips:
-        return None
+        return None, "클립 파일이 없습니다."
 
     # 2. concat 파일 생성
     concat_file = tmp / "filelist.txt"
@@ -153,16 +202,16 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
     concat_out = tmp / "concat.mp4"
 
     # 3. 클립 연결 (re-encode for compatibility)
-    subprocess.run([
+    r1 = subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-b:a", "128k",
         "-t", str(target_dur),
         str(concat_out)
-    ], capture_output=True, timeout=120)
+    ], capture_output=True, text=True, timeout=120)
 
-    if not concat_out.exists():
-        return None
+    if r1.returncode != 0 or not concat_out.exists():
+        return None, f"클립 연결 실패: {r1.stderr[-300:] if r1.stderr else 'unknown error'}"
 
     # 4. 9:16 크롭 + 자막 오버레이
     vf_filters = []
@@ -173,22 +222,26 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
     else:
         vf_filters.append("scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080")
 
-    # 자막 drawtext
+    # 자막 drawtext (한글 폰트 자동 감지)
     if subs:
-        for s in subs:
-            text = s["text"].replace("'", "'\\''").replace(":", "\\:").replace(",", "\\,")
-            vf_filters.append(
-                f"drawtext=text='{text}':fontcolor=white:fontsize=48:"
-                f"x=(w-text_w)/2:y=h-200:shadowcolor=black:shadowx=3:shadowy=3:"
-                f"enable='between(t,{s['start']},{s['end']})'"
-            )
+        fontpath = find_korean_font()
+        if fontpath:
+            fontpath_escaped = fontpath.replace("\\", "/").replace(":", "\\:")
+            for s in subs:
+                text = s["text"].replace("'", "\u2019").replace(":", "\\:").replace(",", "\\,")
+                vf_filters.append(
+                    f"drawtext=fontfile='{fontpath_escaped}':text='{text}':"
+                    f"fontcolor=white:fontsize=48:"
+                    f"x=(w-text_w)/2:y=h-200:shadowcolor=black:shadowx=3:shadowy=3:"
+                    f"enable='between(t,{s['start']},{s['end']})'"
+                )
+        else:
+            st.warning("한글 폰트를 찾을 수 없어 자막 없이 조립합니다.")
 
     final_out = tmp / "final.mp4"
     vf_str = ",".join(vf_filters) if vf_filters else "null"
 
-    cmd = [
-        "ffmpeg", "-y", "-i", str(concat_out),
-    ]
+    cmd = ["ffmpeg", "-y", "-i", str(concat_out)]
 
     # TTS 오디오 합성
     if tts_path and os.path.exists(tts_path):
@@ -200,11 +253,12 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16"):
         cmd += ["-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-c:a", "aac", str(final_out)]
 
-    subprocess.run(cmd, capture_output=True, timeout=180)
+    r2 = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
-    if final_out.exists():
-        return str(final_out)
-    return None
+    if r2.returncode != 0 or not final_out.exists():
+        return None, f"영상 합성 실패: {r2.stderr[-300:] if r2.stderr else 'unknown error'}"
+
+    return str(final_out), None
 
 def extract_coupang_info(url):
     """쿠팡 URL에서 제품명 추출 시도"""
@@ -467,8 +521,7 @@ with tab_search:
                     else:
                         if st.button("＋ 클립에 추가", key=f"add_{vid_id}", use_container_width=True):
                             # 실제 다운로드
-                            save_dir = Path("/tmp/shortform_clips")
-                            save_dir.mkdir(exist_ok=True)
+                            save_dir = _ensure_dir("shortform_clips")
                             dest = save_dir / f"pexels_{vid_id}.mp4"
 
                             with st.spinner("영상 다운로드 중..."):
@@ -495,8 +548,7 @@ with tab_clips:
 
     uploaded = st.file_uploader("클립 업로드 (여러 개 가능)", type=["mp4", "mov", "avi"], accept_multiple_files=True, key="clip_uploader")
     if uploaded:
-        save_dir = Path("/tmp/shortform_clips")
-        save_dir.mkdir(exist_ok=True)
+        save_dir = _ensure_dir("shortform_clips")
         new_clips = []
         for f in uploaded:
             dest = save_dir / f.name
@@ -618,8 +670,12 @@ with tab_script:
         if not has_tts:
             st.markdown(f'<div class="demo-banner">⚠️ {"CLOVA" if "클로바" in tts_engine else "ELEVENLABS"} API 키 미설정 — TTS가 작동하지 않습니다</div>', unsafe_allow_html=True)
 
+        tts_output_path = os.path.join(TMPDIR, "tts_output.mp3")
+
         if st.button("🎙️ TTS 음성 생성"):
             with st.spinner("음성 생성 중..."):
+                tts_success = False
+
                 if "클로바" in tts_engine:
                     clova_id = get_api_key("CLOVA_TTS_CLIENT_ID")
                     clova_sec = get_api_key("CLOVA_TTS_CLIENT_SECRET")
@@ -632,17 +688,14 @@ with tab_script:
                                 data={"speaker": speaker, "text": st.session_state.script, "speed": str(int((tts_speed - 1) * 5)), "format": "mp3"}
                             )
                             if resp.status_code == 200:
-                                with open("/tmp/tts_output.mp3", "wb") as f:
+                                with open(tts_output_path, "wb") as f:
                                     f.write(resp.content)
-                                st.session_state.tts_done = True
+                                tts_success = True
                                 st.success("✅ 클로바 TTS 완료!")
-                                st.audio("/tmp/tts_output.mp3")
                             else:
                                 st.error(f"클로바 오류: {resp.status_code}")
                         except Exception as e:
                             st.error(f"연결 실패: {e}")
-                    else:
-                        st.markdown('<div class="demo-banner">⚠️ 클로바 API 키가 없어 TTS를 생성할 수 없습니다</div>', unsafe_allow_html=True)
                 else:
                     el_key = get_api_key("ELEVENLABS_API_KEY")
                     if el_key and elevenlabs_voice_id:
@@ -651,20 +704,31 @@ with tab_script:
                                 f"https://api.elevenlabs.io/v1/text-to-speech/{elevenlabs_voice_id}",
                                 headers={"xi-api-key": el_key, "Content-Type": "application/json"},
                                 json={"text": st.session_state.script, "model_id": "eleven_multilingual_v2",
-                                      "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": tts_speed}}
+                                      "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                                      "speed": tts_speed}
                             )
                             if resp.status_code == 200:
-                                with open("/tmp/tts_output.mp3", "wb") as f:
+                                with open(tts_output_path, "wb") as f:
                                     f.write(resp.content)
-                                st.session_state.tts_done = True
+                                tts_success = True
                                 st.success("✅ ElevenLabs TTS 완료!")
-                                st.audio("/tmp/tts_output.mp3")
                             else:
                                 st.error(f"ElevenLabs 오류: {resp.status_code}")
                         except Exception as e:
                             st.error(f"연결 실패: {e}")
+
+                # API 키 없으면 데모 모드: 무음 mp3 생성
+                if not tts_success and not has_tts:
+                    silent_dur = max(15, target_dur)
+                    if generate_silent_audio(silent_dur, tts_output_path):
+                        tts_success = True
+                        st.markdown('<div class="demo-banner">데모 모드: 무음 오디오가 생성되었습니다 (API 키 등록 시 실제 음성으로 교체됩니다)</div>', unsafe_allow_html=True)
                     else:
-                        st.markdown('<div class="demo-banner">⚠️ ElevenLabs API 키가 없어 TTS를 생성할 수 없습니다</div>', unsafe_allow_html=True)
+                        st.markdown('<div class="demo-banner">⚠️ TTS API 키가 없고 FFmpeg도 없어 음성을 생성할 수 없습니다</div>', unsafe_allow_html=True)
+
+                if tts_success:
+                    st.session_state.tts_done = True
+                    st.audio(tts_output_path)
     else:
         st.info("스크립트를 먼저 생성해주세요.")
 
@@ -688,10 +752,25 @@ with tab_sub:
             lines = [l.strip() for l in st.session_state.script.split("\n") if l.strip()]
             subs = []
             t = 0.0
+            # 1차: 한국어 기준 글자당 0.25초로 계산
             for l in lines:
-                d = max(1.5, len(l) * 0.12)
+                d = max(1.5, len(l) * 0.25)
                 subs.append({"start": round(t, 1), "end": round(t + d, 1), "text": l})
                 t += d + 0.3
+
+            # 2차: TTS mp3가 있으면 실제 음성 길이에 맞게 비율 조정
+            tts_path = os.path.join(TMPDIR, "tts_output.mp3")
+            if st.session_state.tts_done and os.path.exists(tts_path):
+                tts_dur = get_audio_duration(tts_path)
+                if tts_dur > 0:
+                    raw_total = subs[-1]["end"] if subs else 0
+                    if raw_total > 0:
+                        ratio = tts_dur / raw_total
+                        for s in subs:
+                            s["start"] = round(s["start"] * ratio, 1)
+                            s["end"] = round(s["end"] * ratio, 1)
+                        st.info(f"TTS 음성 길이({tts_dur:.1f}초)에 맞춰 자막 타이밍이 자동 조정되었습니다.")
+
             st.session_state.sample_subs = subs
             st.session_state.subtitle_done = True
             st.success("✅ 자막 생성 완료!")
@@ -736,14 +815,15 @@ with tab_sub:
                 stat.text(f"✂️ {len(valid)}개 클립 조립 중...")
                 prog.progress(30)
 
-                tts_path = "/tmp/tts_output.mp3" if st.session_state.tts_done and os.path.exists("/tmp/tts_output.mp3") else None
+                tts_check = os.path.join(TMPDIR, "tts_output.mp3")
+                tts_path = tts_check if st.session_state.tts_done and os.path.exists(tts_check) else None
                 subs = st.session_state.sample_subs if st.session_state.subtitle_done else []
                 ratio = "9:16" if "9:16" in crop_ratio else "1:1"
 
                 stat.text("🎬 FFmpeg 영상 합성 중... (최대 2분)")
                 prog.progress(50)
 
-                output = assemble_video(valid, subs, tts_path, target_dur, ratio)
+                output, err_msg = assemble_video(valid, subs, tts_path, target_dur, ratio)
 
                 if output and os.path.exists(output):
                     prog.progress(100)
@@ -753,7 +833,7 @@ with tab_sub:
                     st.video(output)
                 else:
                     prog.progress(100)
-                    st.error("❌ 영상 조립 실패. FFmpeg 오류가 발생했습니다.")
+                    st.error(f"❌ 영상 조립 실패: {err_msg or 'FFmpeg 오류'}")
 
 
 # ═════════════════════════════════════════════════════════════════
