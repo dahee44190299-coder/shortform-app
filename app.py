@@ -106,7 +106,7 @@ defaults = {
     "script_history":[], "subtitle_history":[], "search_results":[],
     "coupang_product":"", "coupang_category":"", "coupang_titles":[],
     "coupang_script":"", "coupang_hashtags":"", "coupang_desc":"",
-    "product_images":[], "uploaded_images":[],
+    "product_images":[], "uploaded_images":[], "_prod_videos":[], "_yt_results":[], "_ai_trend_result":"",
     "content_mode":"클릭유도형", "coupang_affiliate_link":"",
     "hook_suggestions":[], "selected_hook":"",
     "hashtag_list":[], "hashtag_selections":{},
@@ -143,6 +143,18 @@ BGM_CATEGORY_KEYWORDS = {
     "건강/헬스": "energetic motivational",
     "유아/키즈": "cute happy",
     "기타": "upbeat positive",
+}
+
+# ── Pexels 카테고리별 추천 검색 키워드 ─────────────────────────
+PEXELS_CATEGORY_KEYWORDS = {
+    "생활용품": ["product showcase", "home lifestyle", "clean minimal interior"],
+    "뷰티/화장품": ["beauty skincare", "cosmetics closeup", "woman self care"],
+    "전자기기": ["technology gadget", "unboxing product", "modern device"],
+    "패션/의류": ["fashion style outfit", "model walking", "clothing aesthetic"],
+    "식품": ["food delicious", "cooking kitchen", "fresh ingredients"],
+    "건강/헬스": ["fitness workout", "healthy lifestyle", "gym exercise"],
+    "유아/키즈": ["baby cute", "kids playing", "happy children"],
+    "기타": ["product review", "minimal background", "lifestyle aesthetic"],
 }
 
 # ── CTA 카테고리별 라이브러리 ──────────────────────────────────
@@ -321,6 +333,92 @@ def download_video(url, dest_path):
     except:
         pass
     return False
+
+def search_youtube_shorts(keyword, n=6):
+    """YouTube Data API로 관련 숏폼 영상 검색 (참고용)"""
+    key = get_api_key("YOUTUBE_API_KEY")
+    if not key:
+        return []
+    try:
+        r = requests.get("https://www.googleapis.com/youtube/v3/search",
+                         params={"key": key, "q": keyword + " #shorts",
+                                 "type": "video", "part": "snippet",
+                                 "maxResults": n, "videoDuration": "short",
+                                 "order": "viewCount"},
+                         timeout=10)
+        if r.status_code != 200:
+            return []
+        results = []
+        for item in r.json().get("items", []):
+            vid_id = item["id"]["videoId"]
+            snippet = item["snippet"]
+            results.append({
+                "id": vid_id,
+                "title": snippet.get("title", ""),
+                "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
+                "channel": snippet.get("channelTitle", ""),
+                "url": f"https://youtube.com/shorts/{vid_id}",
+            })
+        return results
+    except:
+        return []
+
+def extract_product_videos(url):
+    """쿠팡/아마존 URL에서 제품 동영상 URL 추출"""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    videos = []
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # video/source 태그 직접 검색
+        for tag in soup.find_all(["video", "source"]):
+            src = tag.get("src") or tag.get("data-src") or ""
+            if src and (".mp4" in src or ".webm" in src):
+                if src.startswith("//"):
+                    src = "https:" + src
+                if src not in [v["url"] for v in videos]:
+                    videos.append({"url": src, "alt": "제품 영상"})
+
+        # script 태그 내 mp4 URL 추출
+        for script in soup.find_all("script"):
+            text = script.string or ""
+            mp4s = re.findall(r'https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*', text)
+            for vu in mp4s:
+                clean = vu.split('"')[0].split("'")[0]
+                if clean not in [v["url"] for v in videos]:
+                    videos.append({"url": clean, "alt": "제품 영상"})
+
+        # data 속성에서 영상 URL
+        for el in soup.find_all(attrs={"data-video-url": True}):
+            vu = el["data-video-url"]
+            if vu.startswith("//"):
+                vu = "https:" + vu
+            if vu not in [v["url"] for v in videos]:
+                videos.append({"url": vu, "alt": "제품 영상"})
+
+    except:
+        pass
+    return videos[:5]
+
+def auto_order_clips(clips):
+    """클립 소스/이름 기반 최적 순서 추천: 인트로 → 제품 → 배경 → 아웃트로"""
+    intro, product, background, outro, other = [], [], [], [], []
+    for i, c in enumerate(clips):
+        name = c.get("name", "").lower()
+        source = c.get("source", "")
+        if "[인트로]" in name or "intro" in name:
+            intro.append(i)
+        elif "[아웃트로]" in name or "outro" in name:
+            outro.append(i)
+        elif source == "kenburns" or "제품" in name or "product" in name:
+            product.append(i)
+        elif "[배경]" in name or "background" in name or source == "pexels":
+            background.append(i)
+        else:
+            other.append(i)
+    order = intro + product + other + background + outro
+    return [clips[i] for i in order]
 
 def get_video_duration(path):
     try:
@@ -929,6 +1027,7 @@ with st.sidebar:
             ("ElevenLabs", "ELEVENLABS_API_KEY"),
             ("Pexels 검색", "PEXELS_API_KEY"),
             ("Pixabay BGM", "PIXABAY_API_KEY"),
+            ("YouTube 검색", "YOUTUBE_API_KEY"),
         ]:
             ok = has_key(env)
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
@@ -1129,14 +1228,81 @@ with tab_step1:
 
     st.markdown("---")
 
+    # ─── 🎥 영상 직접 업로드 ───
+    st.markdown("### 🎥 영상 직접 업로드")
+    st.markdown('<div class="info-box">내 영상 파일을 직접 업로드해 클립에 추가합니다. (mp4, mov, avi 지원)</div>', unsafe_allow_html=True)
+
+    uploaded_vids = st.file_uploader(
+        "영상 파일 업로드 (여러 개 가능)",
+        type=["mp4", "mov", "avi", "webm"],
+        accept_multiple_files=True,
+        key="vid_uploader_step1",
+    )
+    if uploaded_vids:
+        save_dir = _ensure_dir("shortform_clips")
+        added_count = 0
+        for vf in uploaded_vids:
+            dest = save_dir / vf.name
+            dest.write_bytes(vf.read())
+            dur = get_video_duration(str(dest))
+            dur_str = f"{int(dur//60)}:{int(dur%60):02d}" if dur else "--:--"
+            # 중복 방지
+            if vf.name not in [c["name"] for c in st.session_state.clips]:
+                st.session_state.clips.append({
+                    "name": vf.name,
+                    "path": str(dest),
+                    "duration": dur_str,
+                    "dur_sec": dur,
+                    "source": "upload",
+                })
+                added_count += 1
+        if added_count:
+            st.success(f"✅ {added_count}개 영상이 클립에 추가됨! → STEP 3에서 순서 편집 가능")
+        else:
+            st.info("이미 추가된 영상입니다.")
+
+        # 업로드된 영상 미리보기
+        for vf in uploaded_vids:
+            dest = save_dir / vf.name
+            if dest.exists():
+                with st.expander(f"🎬 {vf.name}"):
+                    st.video(str(dest))
+
+    st.markdown("---")
+
     # ─── Pexels 배경 영상 ───
     st.markdown("### 🎬 Pexels 배경 영상 (인트로/아웃트로용)")
 
     if not has_key("PEXELS_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ PEXELS_API_KEY 필요 — Secrets에 등록하세요</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="info-box">배경/인트로/아웃트로용 무료 영상을 검색하세요. 제품 이미지 위에 깔거나 앞뒤에 붙일 수 있어요.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">카테고리 기반 추천 영상을 자동 검색하거나, 직접 키워드로 검색하세요.</div>', unsafe_allow_html=True)
 
+    # ── 카테고리 기반 추천 영상 자동 검색 ──
+    _rec_cat = st.session_state.coupang_category or "기타"
+    _rec_keywords = PEXELS_CATEGORY_KEYWORDS.get(_rec_cat, PEXELS_CATEGORY_KEYWORDS["기타"])
+
+    st.markdown(f"**🤖 `{_rec_cat}` 카테고리 추천 키워드:**")
+    rec_cols = st.columns(len(_rec_keywords) + 1)
+    _auto_kw = None
+    for ri, rkw in enumerate(_rec_keywords):
+        with rec_cols[ri]:
+            if st.button(f"🔍 {rkw}", key=f"rec_kw_{ri}", use_container_width=True):
+                _auto_kw = rkw
+    with rec_cols[-1]:
+        if st.button("⚡ 전체 추천", key="rec_all", use_container_width=True):
+            _auto_kw = " ".join(_rec_keywords[:2])
+
+    if _auto_kw:
+        with st.spinner(f"'{_auto_kw}' 추천 영상 검색 중..."):
+            st.session_state.search_results = search_pexels(_auto_kw, 9)
+        if st.session_state.search_results:
+            st.success(f"✅ '{_auto_kw}' — {len(st.session_state.search_results)}개 추천 영상 발견!")
+        else:
+            st.warning("추천 결과 없음. 아래에서 직접 키워드를 입력해보세요.")
+
+    st.markdown("---")
+    st.caption("또는 직접 키워드 검색:")
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
         kw = st.text_input("키워드 (영어 권장)", placeholder="예: product showcase, minimal background", label_visibility="collapsed", key="kw_input")
@@ -1193,6 +1359,125 @@ with tab_step1:
                                     st.rerun()
                                 else:
                                     st.error("다운로드 실패")
+
+    st.markdown("---")
+
+    # ─── 🛒 제품 동영상 자동 추출 ───
+    st.markdown("### 🛒 제품 동영상 자동 추출")
+    st.markdown('<div class="info-box">쿠팡/아마존 상품 페이지에서 제품 소개 동영상을 자동 추출합니다.</div>', unsafe_allow_html=True)
+
+    if coupang_url:
+        if st.button("🎥 제품 동영상 추출", key="extract_prod_videos", use_container_width=True):
+            with st.spinner("제품 동영상 URL 추출 중..."):
+                prod_videos = extract_product_videos(coupang_url)
+                if prod_videos:
+                    st.session_state["_prod_videos"] = prod_videos
+                    st.success(f"✅ {len(prod_videos)}개 제품 동영상 발견!")
+                else:
+                    st.warning("동영상을 찾지 못했어요. 쿠팡은 봇 차단이 심해 이미지 추출 또는 직접 업로드를 이용하세요.")
+
+        if st.session_state.get("_prod_videos"):
+            for vi, pv in enumerate(st.session_state["_prod_videos"]):
+                pv_col1, pv_col2 = st.columns([4, 1])
+                with pv_col1:
+                    st.code(pv["url"][:80] + ("..." if len(pv["url"]) > 80 else ""), language=None)
+                with pv_col2:
+                    already_added = any(c.get("name", "").startswith(f"제품동영상_{vi}") for c in st.session_state.clips)
+                    if already_added:
+                        st.markdown("<span class='badge badge-green'>✓ 추가됨</span>", unsafe_allow_html=True)
+                    elif st.button(f"＋ 클립 추가", key=f"add_pvid_{vi}", use_container_width=True):
+                        save_dir = _ensure_dir("shortform_clips")
+                        dest = save_dir / f"product_video_{vi}.mp4"
+                        with st.spinner("동영상 다운로드 중..."):
+                            if download_video(pv["url"], str(dest)):
+                                dur = get_video_duration(str(dest))
+                                st.session_state.clips.append({
+                                    "name": f"제품동영상_{vi}.mp4",
+                                    "path": str(dest),
+                                    "duration": f"{int(dur//60)}:{int(dur%60):02d}",
+                                    "dur_sec": dur,
+                                    "source": "product",
+                                })
+                                st.success("✅ 클립에 추가됨!")
+                                st.rerun()
+                            else:
+                                st.error("다운로드 실패 — URL이 만료되었을 수 있어요")
+    else:
+        st.info("위에서 상품 URL을 입력하면 제품 동영상을 자동 추출할 수 있어요.")
+
+    st.markdown("---")
+
+    # ─── 📺 유튜브 관련 숏폼 참고 ───
+    st.markdown("### 📺 유튜브 관련 숏폼 참고")
+    st.markdown('<div class="info-box">제품 키워드로 인기 YouTube Shorts를 검색해 참고할 수 있습니다. (YouTube Data API 필요)</div>', unsafe_allow_html=True)
+
+    if not has_key("YOUTUBE_API_KEY"):
+        st.markdown('<div class="demo-banner">⚠️ YOUTUBE_API_KEY 필요 — Secrets에 등록하세요</div>', unsafe_allow_html=True)
+    else:
+        _yt_pname = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or ""
+        yt_col1, yt_col2 = st.columns([3, 1])
+        with yt_col1:
+            yt_keyword = st.text_input("YouTube 검색 키워드", value=_yt_pname, placeholder="예: 에어팟 프로", key="yt_kw_input")
+        with yt_col2:
+            yt_search_btn = st.button("🔍 유튜브 검색", key="yt_search_btn", use_container_width=True)
+
+        if yt_search_btn and yt_keyword:
+            with st.spinner(f"'{yt_keyword}' 유튜브 Shorts 검색 중..."):
+                yt_results = search_youtube_shorts(yt_keyword, n=6)
+                if yt_results:
+                    st.session_state["_yt_results"] = yt_results
+                    st.success(f"✅ {len(yt_results)}개 관련 숏폼 발견!")
+                else:
+                    st.warning("검색 결과가 없어요. 다른 키워드를 시도해보세요.")
+
+        if st.session_state.get("_yt_results"):
+            yt_results = st.session_state["_yt_results"]
+            yt_rows = [yt_results[i:i+3] for i in range(0, len(yt_results), 3)]
+            for yt_row in yt_rows:
+                yt_cols = st.columns(3)
+                for yt_col, yt_v in zip(yt_cols, yt_row):
+                    with yt_col:
+                        if yt_v.get("thumbnail"):
+                            try:
+                                st.image(yt_v["thumbnail"], use_container_width=True)
+                            except:
+                                st.markdown('<div style="background:#f7f8fa;height:120px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:2rem;">📺</div>', unsafe_allow_html=True)
+                        st.markdown(f"**{yt_v['title'][:35]}**")
+                        st.caption(f"📺 {yt_v['channel']}")
+                        st.markdown(f"[▶ 영상 보기]({yt_v['url']})")
+
+    st.markdown("---")
+
+    # ─── 🤖 AI 트렌드 키워드 추천 ───
+    st.markdown("### 🤖 AI 트렌드 키워드 추천")
+    st.markdown('<div class="info-box">AI가 제품과 관련된 트렌드 숏폼 키워드와 영상 포맷을 추천합니다.</div>', unsafe_allow_html=True)
+
+    if not has_key("ANTHROPIC_API_KEY"):
+        st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 필요</div>', unsafe_allow_html=True)
+    else:
+        _ai_pname = st.session_state.get("_w_pname", "") or st.session_state.coupang_product or ""
+        _ai_cat = st.session_state.coupang_category or "기타"
+
+        if st.button("✨ AI 키워드 추천 받기", key="ai_trend_btn", use_container_width=True, disabled=(not _ai_pname)):
+            with st.spinner("AI가 트렌드 키워드를 분석 중..."):
+                trend_result = call_claude(
+                    "숏폼 트렌드 전문가. 핵심만 간결하게 출력.",
+                    f"제품: {_ai_pname}\n카테고리: {_ai_cat}\n\n"
+                    "다음 3가지를 알려줘:\n"
+                    "1. 이 제품 관련 인기 숏폼 트렌드 키워드 5개 (영어 + 한국어)\n"
+                    "2. 추천 영상 포맷 3가지 (예: 언박싱, ASMR, 비포애프터 등)\n"
+                    "3. Pexels/YouTube 검색에 좋은 영어 키워드 3개\n\n"
+                    "각 항목을 번호로 구분해서 출력해줘."
+                )
+                if trend_result:
+                    st.session_state["_ai_trend_result"] = trend_result
+                    st.success("✅ AI 추천 완료!")
+
+        if st.session_state.get("_ai_trend_result"):
+            st.markdown(st.session_state["_ai_trend_result"])
+
+        if not _ai_pname:
+            st.caption("💡 위에서 제품명을 입력하면 AI 추천을 받을 수 있어요.")
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -1461,6 +1746,21 @@ with tab_step3:
             st.metric("⏱ 총 길이", f"{int(t//60)}분 {int(t%60)}초")
         with cc:
             st.metric("🎯 목표", f"{target_dur}초")
+
+        # ── AI 순서 자동 추천 ──
+        order_c1, order_c2 = st.columns([1, 1])
+        with order_c1:
+            if st.button("🤖 AI 순서 추천", key="auto_order_btn", use_container_width=True,
+                         help="인트로 → 제품 → 배경 → 아웃트로 순으로 자동 정렬"):
+                reordered = auto_order_clips(clips)
+                st.session_state.clips = reordered
+                st.success("✅ AI가 최적 순서로 정렬했습니다! (인트로 → 제품 → 배경 → 아웃트로)")
+                st.rerun()
+        with order_c2:
+            if st.button("🔀 순서 랜덤 섞기", key="random_order_btn", use_container_width=True):
+                import random as _rnd
+                _rnd.shuffle(st.session_state.clips)
+                st.rerun()
 
         if st.button("✅ 순서 확정"):
             st.session_state.clip_order = [c["path"] for c in clips]
