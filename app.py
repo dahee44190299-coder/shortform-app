@@ -1,6 +1,7 @@
 import streamlit as st
-import os, json, subprocess, tempfile, time, re, requests, glob as globmod
+import os, json, subprocess, tempfile, time, re, requests, glob as globmod, random
 from pathlib import Path
+from bs4 import BeautifulSoup
 
 # ── 크로스 플랫폼 임시 디렉토리 ──────────────────────────────────────
 TMPDIR = tempfile.gettempdir()
@@ -104,6 +105,7 @@ defaults = {
     "script_history":[], "subtitle_history":[], "search_results":[],
     "coupang_product":"", "coupang_category":"", "coupang_titles":[],
     "coupang_script":"", "coupang_hashtags":"", "coupang_desc":"",
+    "product_images":[], "uploaded_images":[],
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -274,6 +276,132 @@ def extract_coupang_info(url):
         pass
     return {"name": "", "success": False}
 
+def extract_product_images(url):
+    """쿠팡/아마존 URL에서 제품 이미지 URL 추출"""
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+    images = []
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # 1) og:image (메타 태그)
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            images.append({"url": og["content"], "alt": "대표 이미지"})
+
+        if "coupang.com" in url:
+            # 쿠팡: 상품 상세 이미지
+            for img in soup.select("img.prod-image__detail, img[data-img-src], .prod-image img, .subType-IMAGE img"):
+                src = img.get("data-img-src") or img.get("src") or ""
+                if src and ("thumbnail" in src or "image" in src or "coupangcdn" in src):
+                    if src.startswith("//"):
+                        src = "https:" + src
+                    if src not in [i["url"] for i in images]:
+                        images.append({"url": src, "alt": img.get("alt", "")[:40]})
+            # 쿠팡: 큰 이미지 패턴
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-img-src") or ""
+                if "coupangcdn" in src and ("500x500" in src or "1000x1000" in src or "230x230" in src):
+                    full = re.sub(r'\d+x\d+', '1000x1000', src)
+                    if full.startswith("//"):
+                        full = "https:" + full
+                    if full not in [i["url"] for i in images]:
+                        images.append({"url": full, "alt": img.get("alt", "")[:40]})
+
+        elif "amazon" in url:
+            # 아마존: 고해상도 이미지
+            for img in soup.find_all("img"):
+                hires = img.get("data-old-hires") or ""
+                if hires and hires not in [i["url"] for i in images]:
+                    images.append({"url": hires, "alt": img.get("alt", "")[:40]})
+            landing = soup.find("img", id="landingImage")
+            if landing:
+                src = landing.get("data-old-hires") or landing.get("src") or ""
+                if src and src not in [i["url"] for i in images]:
+                    images.append({"url": src, "alt": "메인 이미지"})
+    except:
+        pass
+
+    # 중복 제거 + 최대 15장
+    seen = set()
+    unique = []
+    for img in images:
+        if img["url"] not in seen and img["url"].startswith("http"):
+            seen.add(img["url"])
+            unique.append(img)
+    return unique[:15]
+
+def download_image(url, dest_path):
+    """이미지 URL을 파일로 다운로드"""
+    try:
+        r = requests.get(url, stream=True, timeout=15,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            with open(dest_path, "wb") as f:
+                for chunk in r.iter_content(8192):
+                    f.write(chunk)
+            return os.path.getsize(dest_path) > 1000
+    except:
+        pass
+    return False
+
+def images_to_kenburns_video(image_paths, dur_per_img=3, output_path=None, resolution="1080x1920"):
+    """이미지 리스트 → Ken Burns 효과 슬라이드쇼 영상 생성"""
+    if not image_paths:
+        return None, "이미지가 없습니다."
+
+    tmp = _ensure_dir("kenburns_build")
+    clip_files = []
+    effects = ["zoom_in", "zoom_out", "pan_left", "pan_right"]
+    w, h = [int(x) for x in resolution.split("x")]
+    fps = 30
+    frames = dur_per_img * fps
+
+    for idx, img_path in enumerate(image_paths):
+        clip_out = tmp / f"kb_{idx}.mp4"
+        effect = effects[idx % len(effects)]
+
+        if effect == "zoom_in":
+            vf = f"scale=8000:-1,zoompan=z='min(zoom+0.001,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={resolution}:fps={fps}"
+        elif effect == "zoom_out":
+            vf = f"scale=8000:-1,zoompan=z='if(eq(on,1),1.5,max(zoom-0.001,1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={resolution}:fps={fps}"
+        elif effect == "pan_left":
+            vf = f"scale=8000:-1,zoompan=z='1.3':x='iw/2-(iw/zoom/2)-on*2':y='ih/2-(ih/zoom/2)':d={frames}:s={resolution}:fps={fps}"
+        else:
+            vf = f"scale=8000:-1,zoompan=z='1.3':x='iw/2-(iw/zoom/2)+on*2':y='ih/2-(ih/zoom/2)':d={frames}:s={resolution}:fps={fps}"
+
+        r = subprocess.run([
+            "ffmpeg", "-y", "-loop", "1", "-i", str(img_path),
+            "-vf", vf, "-t", str(dur_per_img),
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
+            str(clip_out)
+        ], capture_output=True, text=True, timeout=60)
+
+        if r.returncode == 0 and clip_out.exists():
+            clip_files.append(str(clip_out))
+
+    if not clip_files:
+        return None, "Ken Burns 클립 생성 실패 (FFmpeg 오류)"
+
+    # concat
+    concat_file = tmp / "kb_filelist.txt"
+    with open(concat_file, "w") as f:
+        for cf in clip_files:
+            f.write(f"file '{cf}'\n")
+
+    if not output_path:
+        output_path = str(tmp / "kenburns_final.mp4")
+
+    r = subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_file),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p",
+        str(output_path)
+    ], capture_output=True, text=True, timeout=120)
+
+    if r.returncode == 0 and os.path.exists(output_path):
+        return str(output_path), None
+    return None, f"Ken Burns 합성 실패: {r.stderr[-200:] if r.stderr else 'unknown'}"
+
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
 <div style="padding:32px 0 16px;">
@@ -326,8 +454,8 @@ with st.sidebar:
             st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
 
 # ── 탭 ───────────────────────────────────────────────────────────
-tab_coupang, tab_search, tab_clips, tab_script, tab_sub, tab_dl = st.tabs([
-    "🛒 쿠팡 파트너스", "🔍 영상 검색", "① 클립 & 순서", "② 스크립트 & TTS", "③ 자막 & 편집", "④ 다운로드"
+tab_coupang, tab_source, tab_clips, tab_script, tab_sub, tab_dl = st.tabs([
+    "🛒 쿠팡 파트너스", "📸 영상 소스", "① 클립 & 순서", "② 스크립트 & TTS", "③ 자막 & 편집", "④ 다운로드"
 ])
 
 # ═════════════════════════════════════════════════════════════════
@@ -450,40 +578,139 @@ with tab_coupang:
 
         st.markdown("---")
 
-        # 6. Pexels 영상 자동 검색 연동
-        st.markdown("#### 6️⃣ 관련 영상 자동 검색")
-        auto_keywords = pname.split()[0] if pname else ""
-        kw_suggestions = [auto_keywords, pcat.split("/")[0], "product showcase", "lifestyle", "close up"]
-        kw_suggestions = [k for k in kw_suggestions if k]
-
-        kw_cols = st.columns(len(kw_suggestions))
-        for i, kw in enumerate(kw_suggestions):
-            with kw_cols[i]:
-                if st.button(kw, key=f"ckw_{i}", use_container_width=True):
-                    with st.spinner(f"'{kw}' 검색 중..."):
-                        st.session_state.search_results = search_pexels(kw, 6)
-                    if st.session_state.search_results:
-                        st.success(f"✅ {len(st.session_state.search_results)}개 발견 → '영상 검색' 탭에서 확인")
-                    elif not has_key("PEXELS_API_KEY"):
-                        st.markdown('<div class="demo-banner">⚠️ PEXELS_API_KEY 필요</div>', unsafe_allow_html=True)
+        # 6. 제품 이미지 자동 추출 연동
+        st.markdown("#### 6️⃣ 제품 이미지 추출 → 영상 소스 탭으로")
+        if coupang_url:
+            if st.button("📸 이 URL에서 이미지 추출하기", key="extract_imgs_coupang"):
+                with st.spinner("제품 이미지 추출 중..."):
+                    imgs = extract_product_images(coupang_url)
+                    if imgs:
+                        st.session_state.product_images = imgs
+                        st.success(f"✅ {len(imgs)}개 이미지 추출 → '📸 영상 소스' 탭에서 확인")
                     else:
-                        st.info("결과 없음")
+                        st.warning("이미지 추출 실패 — 영상 소스 탭에서 직접 업로드하세요")
+        else:
+            st.info("위에서 쿠팡 URL을 입력하면 이미지를 자동 추출할 수 있어요.")
 
 
 # ═════════════════════════════════════════════════════════════════
-# TAB: 영상 검색
+# TAB: 📸 영상 소스
 # ═════════════════════════════════════════════════════════════════
-with tab_search:
-    st.markdown('<div class="card"><div class="card-label">VIDEO SEARCH</div><h3>🔍 키워드로 무료 영상 검색</h3></div>', unsafe_allow_html=True)
+with tab_source:
+    st.markdown('<div class="card"><div class="card-label">VIDEO SOURCES</div><h3>📸 영상 소스 — 이미지 & 배경 영상</h3></div>', unsafe_allow_html=True)
+
+    # ─── 섹션 A: 제품 이미지 자동 추출 (핵심) ───
+    st.markdown("### 🛒 섹션 A: 제품 이미지 자동 추출")
+    st.markdown('<div class="info-box">쿠팡/아마존 상품 URL을 입력하면 제품 이미지를 자동 추출하고, Ken Burns 효과로 영상화합니다.</div>', unsafe_allow_html=True)
+
+    src_url = st.text_input("상품 URL (쿠팡/아마존)", placeholder="https://www.coupang.com/vp/products/...", key="src_url_input")
+    sa1, sa2 = st.columns([1, 3])
+    with sa1:
+        do_img_extract = st.button("📸 이미지 추출", use_container_width=True)
+
+    if do_img_extract and src_url:
+        with st.spinner("제품 이미지 추출 중..."):
+            imgs = extract_product_images(src_url)
+            if imgs:
+                st.session_state.product_images = imgs
+                st.success(f"✅ {len(imgs)}개 이미지 추출 완료!")
+            else:
+                st.warning("이미지 추출 실패 — 쿠팡의 봇 차단 정책 때문일 수 있어요. 아래에서 직접 업로드하세요.")
+
+    if st.session_state.product_images:
+        st.markdown(f"**추출된 이미지 ({len(st.session_state.product_images)}개)**")
+        img_rows = [st.session_state.product_images[i:i+4] for i in range(0, len(st.session_state.product_images), 4)]
+        for row in img_rows:
+            img_cols = st.columns(4)
+            for col, img in zip(img_cols, row):
+                with col:
+                    try:
+                        st.image(img["url"], use_container_width=True)
+                    except:
+                        st.markdown('<div style="background:#f7f8fa;height:80px;border-radius:8px;display:flex;align-items:center;justify-content:center;">🖼️</div>', unsafe_allow_html=True)
+                    st.caption(img.get("alt", "")[:20])
+
+        kb_dur = st.slider("이미지당 시간 (초)", 2, 4, 3, key="kb_dur_a")
+        if st.button("🎬 Ken Burns 영상 생성", key="kb_gen_a", use_container_width=True):
+            with st.spinner("이미지 다운로드 + Ken Burns 효과 적용 중... (시간이 걸릴 수 있어요)"):
+                img_dir = _ensure_dir("product_images")
+                local_paths = []
+                for i, img in enumerate(st.session_state.product_images):
+                    dest = img_dir / f"prod_{i}.jpg"
+                    if download_image(img["url"], str(dest)):
+                        local_paths.append(str(dest))
+
+                if local_paths:
+                    out_path, err = images_to_kenburns_video(local_paths, kb_dur)
+                    if out_path:
+                        dur = get_video_duration(out_path)
+                        st.session_state.clips.append({
+                            "name": f"제품이미지_kenburns.mp4",
+                            "path": out_path,
+                            "duration": f"{int(dur//60)}:{int(dur%60):02d}",
+                            "dur_sec": dur,
+                            "source": "kenburns",
+                        })
+                        st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → 클립 탭에 자동 추가됨")
+                        st.video(out_path)
+                    else:
+                        st.error(f"❌ 영상 생성 실패: {err}")
+                else:
+                    st.error("이미지 다운로드 실패")
+
+    st.markdown("---")
+
+    # ─── 섹션 B: 이미지 직접 업로드 ───
+    st.markdown("### 🖼️ 섹션 B: 이미지 직접 업로드")
+    uploaded_imgs = st.file_uploader("이미지 업로드 (여러 개 가능)", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True, key="img_uploader")
+
+    if uploaded_imgs:
+        img_dir = _ensure_dir("uploaded_images")
+        local_paths = []
+        up_cols = st.columns(min(len(uploaded_imgs), 4))
+        for i, f in enumerate(uploaded_imgs):
+            dest = img_dir / f.name
+            dest.write_bytes(f.read())
+            local_paths.append(str(dest))
+            with up_cols[i % len(up_cols)]:
+                try:
+                    st.image(str(dest), use_container_width=True)
+                except:
+                    st.caption(f.name)
+
+        st.session_state.uploaded_images = local_paths
+        kb_dur_b = st.slider("이미지당 시간 (초)", 2, 4, 3, key="kb_dur_b")
+
+        if st.button("🎬 Ken Burns 영상 생성", key="kb_gen_b", use_container_width=True):
+            with st.spinner("Ken Burns 효과 적용 중..."):
+                out_path, err = images_to_kenburns_video(local_paths, kb_dur_b)
+                if out_path:
+                    dur = get_video_duration(out_path)
+                    st.session_state.clips.append({
+                        "name": f"업로드이미지_kenburns.mp4",
+                        "path": out_path,
+                        "duration": f"{int(dur//60)}:{int(dur%60):02d}",
+                        "dur_sec": dur,
+                        "source": "kenburns",
+                    })
+                    st.success(f"✅ Ken Burns 영상 생성 완료! ({dur:.0f}초) → 클립 탭에 자동 추가됨")
+                    st.video(out_path)
+                else:
+                    st.error(f"❌ 영상 생성 실패: {err}")
+
+    st.markdown("---")
+
+    # ─── 섹션 C: Pexels 배경 영상 (보조) ───
+    st.markdown("### 🎬 섹션 C: Pexels 배경 영상 (인트로/아웃트로용)")
 
     if not has_key("PEXELS_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ PEXELS_API_KEY 필요 — Secrets에 등록하세요</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="info-box">Pexels 저작권 무료 영상을 검색하고 바로 클립에 추가할 수 있어요.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">배경/인트로/아웃트로용 무료 영상을 검색하세요. 제품 이미지 위에 깔거나 앞뒤에 붙일 수 있어요.</div>', unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([3, 1, 1])
     with c1:
-        kw = st.text_input("키워드 (영어 권장)", placeholder="예: wireless earphones, tech gadget", label_visibility="collapsed", key="kw_input")
+        kw = st.text_input("키워드 (영어 권장)", placeholder="예: product showcase, minimal background", label_visibility="collapsed", key="kw_input")
     with c2:
         n_results = st.selectbox("개수", [6, 9, 12], index=1, label_visibility="collapsed")
     with c3:
@@ -493,12 +720,11 @@ with tab_search:
         with st.spinner(f"'{kw}' 검색 중..."):
             st.session_state.search_results = search_pexels(kw, n_results)
         if st.session_state.search_results:
-            st.success(f"✅ {len(st.session_state.search_results)}개 영상 발견!")
+            st.success(f"✅ {len(st.session_state.search_results)}개 배경 영상 발견!")
         else:
             st.warning("결과 없음. 다른 키워드를 시도해보세요.")
 
     if st.session_state.search_results:
-        st.markdown("### 검색 결과")
         results = st.session_state.search_results
         rows = [results[i:i+3] for i in range(0, len(results), 3)]
         for row in rows:
@@ -519,8 +745,8 @@ with tab_search:
                     if already:
                         st.markdown("<span class='badge badge-green'>✓ 추가됨</span>", unsafe_allow_html=True)
                     else:
-                        if st.button("＋ 클립에 추가", key=f"add_{vid_id}", use_container_width=True):
-                            # 실제 다운로드
+                        px_role = st.selectbox("용도", ["배경", "인트로", "아웃트로"], key=f"role_{vid_id}", label_visibility="collapsed")
+                        if st.button(f"＋ {px_role}로 추가", key=f"add_{vid_id}", use_container_width=True):
                             save_dir = _ensure_dir("shortform_clips")
                             dest = save_dir / f"pexels_{vid_id}.mp4"
 
@@ -528,7 +754,7 @@ with tab_search:
                                 if v.get("download_url") and download_video(v["download_url"], str(dest)):
                                     dur = get_video_duration(str(dest))
                                     st.session_state.clips.append({
-                                        "name": f"pexels_{vid_id}.mp4",
+                                        "name": f"[{px_role}] pexels_{vid_id}.mp4",
                                         "path": str(dest),
                                         "duration": f"{int(dur//60)}:{int(dur%60):02d}",
                                         "dur_sec": dur,
@@ -567,7 +793,7 @@ with tab_clips:
         for i, clip in enumerate(clips):
             c1, c2, c3, c4, c5, c6 = st.columns([0.6, 0.4, 0.4, 4, 1.2, 0.7])
             with c1:
-                src_badge = "badge-blue" if clip.get("source") == "pexels" else "badge-dark"
+                src_badge = "badge-blue" if clip.get("source") == "pexels" else ("badge-green" if clip.get("source") == "kenburns" else "badge-dark")
                 st.markdown(f"<span class='badge {src_badge}'>#{i+1:02d}</span>", unsafe_allow_html=True)
             with c2:
                 if i > 0 and st.button("↑", key=f"up_{i}"):
