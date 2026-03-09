@@ -603,14 +603,33 @@ def call_claude(system_prompt, user_msg, max_tokens=1500):
         st.error(f"Claude API 오류: {e}")
         return None
 
-def search_pexels(keyword, n=9):
+def _translate_keyword_to_english(keyword):
+    """한국어 키워드를 Pexels 검색용 영어로 자동 변환."""
+    import re
+    # 이미 영어면 그대로 반환
+    if re.match(r'^[a-zA-Z0-9\s\-]+$', keyword.strip()):
+        return keyword
+    try:
+        result = call_claude(
+            "Translate the following Korean keyword to English for Pexels stock video search. Output ONLY the English keyword (2-3 words max), nothing else.",
+            keyword,
+            max_tokens=30
+        )
+        return result.strip() if result else keyword
+    except Exception:
+        return keyword
+
+
+def search_pexels(keyword, n=12):
     key = get_api_key("PEXELS_API_KEY")
     if not key:
         return []
+    # 한국어 키워드 자동 영어 변환
+    _en_keyword = _translate_keyword_to_english(keyword)
     try:
         r = requests.get("https://api.pexels.com/videos/search",
                          headers={"Authorization": key},
-                         params={"query": keyword, "per_page": n, "orientation": "portrait"},
+                         params={"query": _en_keyword, "per_page": n, "orientation": "portrait"},
                          timeout=10)
         if r.status_code != 200:
             return []
@@ -2432,7 +2451,7 @@ def render_step1():
             with px_c1:
                 px_kw = st.text_input("키워드 직접 입력 (영어 권장)", placeholder="예: product showcase, minimal background", label_visibility="collapsed", key="kw_input_b2")
             with px_c2:
-                px_n = st.selectbox("개수", [6, 9, 12], index=1, label_visibility="collapsed", key="px_n_b2")
+                px_n = st.selectbox("개수", [9, 12, 15], index=1, label_visibility="collapsed", key="px_n_b2")
             with px_c3:
                 px_search = st.button("🔍 검색", use_container_width=True, key="px_search_b2")
             if px_search and px_kw:
@@ -3039,7 +3058,20 @@ def render_step3():
         st.markdown("---")
 
         # ── 쿠팡 스크립트 자동 생성 ──
-        st.markdown("#### 📋 쿠팡 30~45초 스크립트 자동 생성")
+        st.markdown("#### 📋 쿠팡 숏폼 스크립트 자동 생성")
+
+        # ── 톤 / 강조 포인트 / 길이 선택 UI ──
+        _sc_c1, _sc_c2, _sc_c3 = st.columns(3)
+        with _sc_c1:
+            _script_tone = st.selectbox("말투", ["친근한 반말", "정중한 존댓말", "전문가 톤"], key="_w_script_tone")
+        with _sc_c2:
+            _script_emphasis = st.selectbox("강조 포인트", ["가격", "품질", "편의성", "희소성"], key="_w_script_emphasis")
+        with _sc_c3:
+            _script_length = st.selectbox("길이", ["15초 (초단편)", "30초 (표준)", "60초 (롱폼)"], key="_w_script_length")
+
+        _len_map = {"15초 (초단편)": ("15초", "15~20초", "3~5문장"), "30초 (표준)": ("30초", "30~45초", "8~12문장"), "60초 (롱폼)": ("60초", "50~60초", "15~20문장")}
+        _len_label, _len_range, _len_sentences = _len_map.get(_script_length, ("30초", "30~45초", "8~12문장"))
+
         if st.button("✨ AI 스크립트 생성", key="gen_coupang_script"):
             with st.spinner("스크립트 생성 중..."):
                 cmode = st.session_state.content_mode
@@ -3055,9 +3087,40 @@ def render_step3():
                 _active_tpl = TEMPLATES.get(st.session_state.get("active_template", ""), {})
                 if _active_tpl.get("script_tone"):
                     _tpl_tone = f"\n템플릿 톤: {_active_tpl['script_tone']}"
+
+                _tone_guide = {"친근한 반말": "친구한테 말하듯 반말로. '야 이거 진짜 대박이야' 느낌. 이모지 자유롭게 사용.",
+                               "정중한 존댓말": "정중하지만 딱딱하지 않게. '이 제품 정말 추천드려요' 느낌. 존댓말 사용.",
+                               "전문가 톤": "전문 리뷰어처럼 객관적이고 신뢰감 있게. 데이터와 수치 활용."}
+                _emph_guide = {"가격": "가격 대비 성능, 할인율, '이 가격에 이 퀄리티?' 강조. 숫자를 적극 활용.",
+                               "품질": "소재, 내구성, 디테일, 마감 품질 강조. 실제 사용감 묘사.",
+                               "편의성": "사용 편리함, 시간 절약, 간편함 강조. before/after 비교.",
+                               "희소성": "한정 수량, 품절 임박, '지금 아니면 못 삼' 분위기 조성. 긴급성 강조."}
+
                 result = call_claude(
-                    "쿠팡 파트너스 숏폼 스크립트 전문가. 스크립트만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n스타일 가이드: {mode_guide.get(cmode, '')}{_tpl_tone}\n\n30~45초 분량 숏폼 광고 스크립트를 작성해줘.\n\n필수 구조:\n1. [0-5초] 후킹: 시청자 멈추게 하는 충격적/궁금한 첫 문장\n2. [5-15초] 문제 제시: 일상의 불편함/고민\n3. [15-30초] 제품 소개: 이 제품이 해결해주는 이유\n4. [30-40초] 사용 후기/증거\n5. [40-45초] CTA: '링크 클릭해서 확인해보세요'\n\n조건: '{cmode}' 목적에 맞게, 짧은 문장, 구어체, 감정적 표현"
+                    "쿠팡 파트너스 숏폼 대본 전문 작가. 대본만 출력. 다른 설명 없이 대본 텍스트만.",
+                    f"""제품: {pname}
+카테고리: {pcat}
+콘텐츠 목적: {cmode}
+스타일 가이드: {mode_guide.get(cmode, '')}
+말투: {_script_tone} — {_tone_guide.get(_script_tone, '')}
+강조 포인트: {_script_emphasis} — {_emph_guide.get(_script_emphasis, '')}
+목표 길이: {_len_range} ({_len_sentences})
+{_tpl_tone}
+
+아래 구조로 {_len_range} 분량 숏폼 광고 대본을 작성해줘.
+
+[Hook — 첫 3초] 시청자가 스크롤을 멈추게 만드는 충격적/궁금한 첫 문장. 질문형, 놀람형, 손해회피형 중 하나.
+[문제 제시 — 5초] 타겟 고객의 일상 불편함/고민을 공감하며 제시. '혹시 ~한 적 있으세요?' 패턴.
+[해결책 — 10초] 이 제품이 왜 해결책인지 핵심 3가지 포인트. '{_script_emphasis}' 관점에서 설명.
+[증거 — 5초] 리뷰 수, 평점, 판매량, 실사용 후기 등 신뢰 요소. 구체적 숫자 활용.
+[CTA — 3초] '링크 클릭해서 확인해보세요' 류의 행동 유도. 긴급성 포함.
+
+필수 조건:
+- '{_script_tone}' 말투로 작성
+- 한 문장 15자 이내 (짧고 리듬감 있게)
+- 구어체, 감정적 표현
+- 각 섹션 앞에 [Hook], [문제], [해결책], [증거], [CTA] 태그 표시
+- {_len_sentences} 분량"""
                 )
                 if result:
                     st.session_state.coupang_script = result
@@ -3564,7 +3627,7 @@ def render_step3():
     # Multi-Video Generator (영상 5개 한번에 생성)
     # ═══════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown('<div class="ux-card"><div class="ux-card-title">MULTI-VIDEO</div><h4>🎬 Multi-Video 생성</h4><p class="ux-sub">제품 1개 → 템플릿 + Hook 조합이 다른 영상 5개를 한번에 생성합니다</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">MULTI-VIDEO</div><h4>🎬 Multi-Video 생성</h4><p class="ux-sub">현재 템플릿 × Hook A/B/C × Pattern Interrupt ON/OFF → 영상 5개 한번에 생성</p></div>', unsafe_allow_html=True)
 
     _mv_pname = st.session_state.get("_w_pname", "") or st.session_state.get("_saved_pname", "") or st.session_state.coupang_product or ""
     _mv_clips = [c for c in st.session_state.clips if os.path.exists(c.get("path", ""))]
@@ -3574,19 +3637,21 @@ def render_step3():
     elif not _mv_pname:
         st.markdown('<div class="warn-box">⚠️ STEP 1에서 제품명을 먼저 입력해주세요.</div>', unsafe_allow_html=True)
     else:
-        # 5개 영상 조합 미리보기
+        # 현재 선택된 템플릿 기반으로 조합 생성
+        _mv_cur_tpl = st.session_state.get("active_template", "coupang_shorts") or "coupang_shorts"
+        _mv_tpl_name = TEMPLATES.get(_mv_cur_tpl, {}).get("name", _mv_cur_tpl)
         _mv_combos = [
-            {"template": "coupang_shorts",  "hook_type": "A", "hook_label": "문제 제시형", "label": "🛒 쿠팡 쇼츠 + Hook A"},
-            {"template": "coupang_shorts",  "hook_type": "B", "hook_label": "놀람형",     "label": "🛒 쿠팡 쇼츠 + Hook B"},
-            {"template": "tiktok_review",   "hook_type": "A", "hook_label": "문제 제시형", "label": "📱 틱톡 리뷰 + Hook A"},
-            {"template": "problem_solving", "hook_type": "C", "hook_label": "손해 회피형", "label": "🔧 문제 해결 + Hook C"},
-            {"template": "shopping_promo",  "hook_type": "B", "hook_label": "놀람형",     "label": "🏪 쇼핑몰 홍보 + Hook B"},
+            {"template": _mv_cur_tpl, "hook_type": "A", "hook_label": "문제 제시형", "pi": False, "label": f"{_mv_tpl_name} + Hook A"},
+            {"template": _mv_cur_tpl, "hook_type": "B", "hook_label": "놀람형",     "pi": False, "label": f"{_mv_tpl_name} + Hook B"},
+            {"template": _mv_cur_tpl, "hook_type": "C", "hook_label": "손해 회피형", "pi": False, "label": f"{_mv_tpl_name} + Hook C"},
+            {"template": _mv_cur_tpl, "hook_type": "A", "hook_label": "문제 제시형", "pi": True,  "label": f"{_mv_tpl_name} + Hook A + PI"},
+            {"template": _mv_cur_tpl, "hook_type": "B", "hook_label": "놀람형",     "pi": True,  "label": f"{_mv_tpl_name} + Hook B + PI"},
         ]
 
         with st.expander("📋 생성될 영상 5개 조합", expanded=False):
             for _mvi, _mvc in enumerate(_mv_combos):
-                _tpl_name = TEMPLATES.get(_mvc["template"], {}).get("name", _mvc["template"])
-                st.markdown(f"**영상 {_mvi+1}** — {_tpl_name} · Hook {_mvc['hook_type']} ({_mvc['hook_label']})")
+                _pi_tag = " + Pattern Interrupt ✅" if _mvc["pi"] else ""
+                st.markdown(f"**영상 {_mvi+1}** — {_mvc['label']}{_pi_tag} ({_mvc['hook_label']})")
 
         if st.button("⚡ 영상 5개 한번에 생성", key="btn_multi_video", type="primary", use_container_width=True):
             _mv_target_dur = st.session_state.get("_w_target_dur", 30)
@@ -3614,7 +3679,7 @@ def render_step3():
                     _mv_cta_color = _mv_tpl.get("sub_color", st.session_state.get("cta_color", "#FFFFFF"))
                     _mv_cta_pos = _mv_tpl.get("cta_position", "하단")
                     _mv_cta_dur = st.session_state.get("cta_duration", 3)
-                    _mv_pi = _mv_tpl.get("pattern_interrupt", False)
+                    _mv_pi = _mvc.get("pi", _mv_tpl.get("pattern_interrupt", False))
                     _mv_rb = _mv_tpl.get("retention_booster", True)
 
                     # 2. Hook 텍스트 생성
@@ -3645,7 +3710,8 @@ def render_step3():
                     # 4. 결과 저장 — 고유 파일명으로 복사
                     if _mv_ver_results and _mv_ver_results[0].get("video_path") and os.path.exists(_mv_ver_results[0]["video_path"]):
                         import shutil
-                        _mv_final_name = f"multi_video_{_mvi+1}_{_mvc['template']}_hook{_mvc['hook_type']}.mp4"
+                        _mv_pi_tag = "_PI" if _mvc.get("pi") else ""
+                        _mv_final_name = f"multi_video_{_mvi+1}_hook{_mvc['hook_type']}{_mv_pi_tag}.mp4"
                         _mv_final_path = str(_mv_out_dir / _mv_final_name)
                         shutil.copy2(_mv_ver_results[0]["video_path"], _mv_final_path)
                         _mv_results.append({
@@ -3659,6 +3725,7 @@ def render_step3():
                             "subtitle_path": _mv_ver_results[0].get("subtitle_path", ""),
                             "audio_path": _mv_ver_results[0].get("audio_path", ""),
                             "label": _mvc["label"],
+                            "pi": _mvc.get("pi", False),
                         })
                     else:
                         _mv_results.append({
@@ -3672,6 +3739,7 @@ def render_step3():
                             "subtitle_path": "",
                             "audio_path": "",
                             "label": _mvc["label"],
+                            "pi": _mvc.get("pi", False),
                             "error": "생성 실패",
                         })
 
@@ -3906,7 +3974,7 @@ def render_step4():
     if _mv_has_videos:
         _mv_success = [r for r in _mv_outputs if r.get("video_path") and os.path.exists(r.get("video_path", ""))]
         st.markdown(f"### 🎬 Multi-Video 결과 ({len(_mv_success)}/5개)")
-        st.markdown('<div class="info-box">템플릿 + Hook 조합이 다른 영상 5개입니다. 각 영상을 플랫폼별로 다운로드하세요!</div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">현재 템플릿 × Hook A/B/C × PI ON/OFF 조합 영상 5개입니다. 각 영상을 플랫폼별로 다운로드하세요!</div>', unsafe_allow_html=True)
 
         for _mvi, _mvr in enumerate(_mv_outputs):
             _tpl_badge = "badge-blue"
@@ -3914,7 +3982,8 @@ def render_step4():
             elif "틱톡" in _mvr.get("template", ""): _tpl_badge = "badge-green"
             elif "문제" in _mvr.get("template", ""): _tpl_badge = "badge-dark"
 
-            st.markdown(f'<div class="card" style="margin-bottom:12px;"><span class="badge {_tpl_badge}">영상 {_mvi+1}</span> &nbsp; <strong>{_mvr.get("label", "")}</strong></div>', unsafe_allow_html=True)
+            _pi_label = " · PI ✅" if _mvr.get("pi") else ""
+            st.markdown(f'<div class="card" style="margin-bottom:12px;"><span class="badge {_tpl_badge}">영상 {_mvi+1}</span> &nbsp; <strong>{_mvr.get("label", "")}{_pi_label}</strong></div>', unsafe_allow_html=True)
 
             if _mvr.get("video_path") and os.path.exists(_mvr["video_path"]):
                 _mv_vc1, _mv_vc2 = st.columns([2, 3])
@@ -3923,6 +3992,8 @@ def render_step4():
                 with _mv_vc2:
                     st.markdown(f"**템플릿:** {_mvr.get('template', '')}")
                     st.markdown(f"**Hook:** {_mvr.get('hook_type', '')} ({_mvr.get('hook_label', '')})")
+                    if _mvr.get("pi"):
+                        st.markdown("**Pattern Interrupt:** ✅ ON")
                     if _mvr.get("hook_text"):
                         st.caption(f'"{_mvr["hook_text"]}"')
                     # 플랫폼별 다운로드
