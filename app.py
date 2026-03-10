@@ -903,6 +903,73 @@ def download_video_with_fallback(url, max_size_mb=100):
     return None, err1
 
 
+# ── YouTube 추천 영상 시스템 (7차) ──
+def generate_youtube_keywords(product_name, category="기타"):
+    """제품명 → YouTube 검색용 영어 키워드 5개 생성."""
+    if has_key("ANTHROPIC_API_KEY") and product_name:
+        result = call_claude(
+            "YouTube search keyword expert. Output English keywords only, one per line, no numbering.",
+            f"Product: {product_name}\nCategory: {category}\n\n"
+            "Generate 5 YouTube search keywords in English for finding short review/demo videos.\n"
+            "Each keyword 2-4 words, one per line.\nFocus: product review, comparison, how-to, demo, shorts.",
+            max_tokens=200
+        )
+        if result:
+            keywords = [line.strip() for line in result.strip().split("\n") if line.strip() and not line.strip().startswith("#")]
+            return keywords[:5]
+    # Fallback
+    base = _translate_keyword_to_english(product_name) if product_name else "product"
+    return [f"{base} review", f"{base} unboxing", f"best {base}", f"{base} shorts", f"{base} demo"]
+
+
+def search_youtube_recommendations(keywords, max_results=5):
+    """youtube-search-python으로 추천 영상 검색. 키워드별 2개 → 중복제거 → ≤90초 → top 5."""
+    try:
+        from youtubesearchpython import VideosSearch
+    except ImportError:
+        return []
+    all_results = []
+    seen_ids = set()
+    for kw in keywords:
+        try:
+            search = VideosSearch(kw, limit=2)
+            items = search.result().get("result", [])
+            for item in items:
+                vid_id = item.get("id", "")
+                if vid_id in seen_ids:
+                    continue
+                seen_ids.add(vid_id)
+                dur_str = item.get("duration", "0:00") or "0:00"
+                parts = dur_str.split(":")
+                dur_sec = 0
+                try:
+                    if len(parts) == 2:
+                        dur_sec = int(parts[0]) * 60 + int(parts[1])
+                    elif len(parts) == 3:
+                        dur_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                except ValueError:
+                    dur_sec = 0
+                if dur_sec > 90 or dur_sec == 0:
+                    continue
+                thumbs = item.get("thumbnails", [])
+                thumb_url = thumbs[0].get("url", "") if thumbs else ""
+                channel = item.get("channel", {})
+                ch_name = channel.get("name", "") if isinstance(channel, dict) else str(channel)
+                views = item.get("viewCount", {})
+                views_text = views.get("short", "") if isinstance(views, dict) else ""
+                link = item.get("link", "")
+                is_short = "/shorts/" in link
+                all_results.append({
+                    "id": vid_id, "title": item.get("title", ""), "url": link,
+                    "thumbnail": thumb_url, "channel": ch_name, "duration": dur_str,
+                    "dur_sec": dur_sec, "views": views_text, "is_short": is_short, "keyword": kw,
+                })
+        except Exception:
+            continue
+    all_results.sort(key=lambda x: (not x["is_short"], x["dur_sec"]))
+    return all_results[:max_results]
+
+
 def extract_product_videos(url):
     """쿠팡/아마존 URL에서 제품 동영상 URL 추출"""
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
@@ -2299,6 +2366,79 @@ def render_step1():
     # ║ 블록 2: 🎬 영상 확보                                      ║
     # ╚══════════════════════════════════════════════════════════╝
     st.markdown("## 🎬 블록 2 — 영상 확보")
+
+    # ═══════ 추천 영상 찾기 (7차) ═══════
+    _rec_pn = (st.session_state.get("_w_pname", "") or st.session_state.get("_saved_pname", "") or st.session_state.coupang_product or "")
+    with st.expander("🔎 추천 영상 찾기 (YouTube)", expanded=False):
+        st.markdown('<div class="info-box">제품명 기반으로 YouTube에서 참고할 숏폼 영상을 자동 검색합니다. 선택하면 자동 다운로드 &rarr; 클립 분할 &rarr; STEP 2로 이동합니다.</div>', unsafe_allow_html=True)
+        if not _rec_pn:
+            st.warning("위 블록 1에서 제품명을 먼저 입력해주세요.")
+        else:
+            _rec_kw_col, _rec_btn_col = st.columns([3, 1])
+            with _rec_btn_col:
+                _rec_do_search = st.button("🔍 추천 영상 검색", key="rec_search_btn", type="primary", use_container_width=True)
+            with _rec_kw_col:
+                if st.session_state.recommended_keywords:
+                    st.markdown(f"**검색 키워드:** {' · '.join(st.session_state.recommended_keywords)}")
+            if _rec_do_search:
+                with st.spinner("AI 키워드 생성 + YouTube 검색 중..."):
+                    _rec_cat = st.session_state.coupang_category or "기타"
+                    _rec_kws = generate_youtube_keywords(_rec_pn, _rec_cat)
+                    st.session_state.recommended_keywords = _rec_kws
+                    _rec_vids = search_youtube_recommendations(_rec_kws, max_results=5)
+                    st.session_state.recommended_videos = _rec_vids
+                    if _rec_vids:
+                        st.success(f"✅ {len(_rec_vids)}개 추천 영상을 찾았습니다!")
+                    else:
+                        st.warning("검색 결과가 없습니다. 제품명을 변경해보세요.")
+                st.rerun()
+            # 결과 표시
+            if st.session_state.recommended_videos:
+                st.markdown("---")
+                _rec_ncols = min(len(st.session_state.recommended_videos), 3)
+                _rec_cols = st.columns(_rec_ncols)
+                for _ri, _rv in enumerate(st.session_state.recommended_videos):
+                    with _rec_cols[_ri % _rec_ncols]:
+                        if _rv.get("thumbnail"):
+                            try:
+                                st.image(_rv["thumbnail"], use_container_width=True)
+                            except Exception:
+                                pass
+                        _short_tag = " 🎬Shorts" if _rv.get("is_short") else ""
+                        st.markdown(f"**{_rv['title'][:40]}**{_short_tag}")
+                        st.caption(f"📺 {_rv['channel']} · ⏱ {_rv['duration']} · 👀 {_rv.get('views', '')}")
+                        if st.button("✅ 이 영상 사용", key=f"rec_use_{_ri}", use_container_width=True, type="primary"):
+                            with st.spinner(f"다운로드 + 클립 분할 중..."):
+                                _rec_fpath, _rec_err = download_video_with_fallback(_rv["url"])
+                                if _rec_fpath:
+                                    import clip_analyzer as _ca
+                                    _rec_ts = _ca.analyze_scenes(_rec_fpath)
+                                    _rec_clips = _ca.split_clips(_rec_fpath, _rec_ts)
+                                    if _rec_clips:
+                                        _tag_order = ["인트로", "사용장면", "사용장면", "아웃트로"]
+                                        for _ci, _cl in enumerate(_rec_clips):
+                                            _cl["usage_tag"] = _tag_order[min(_ci, len(_tag_order)-1)]
+                                            _cl["source"] = "youtube_rec"
+                                        st.session_state.clips.extend(_rec_clips)
+                                        st.session_state.selected_recommended_video = _rv
+                                        st.success(f"✅ {len(_rec_clips)}개 클립 추가 완료! STEP 2로 이동합니다.")
+                                        st.session_state.current_step = 2
+                                        st.rerun()
+                                    else:
+                                        _dur_str = _rv.get("duration", "0:00")
+                                        st.session_state.clips.append({
+                                            "name": os.path.basename(_rec_fpath), "path": _rec_fpath,
+                                            "duration": _dur_str, "dur_sec": _rv.get("dur_sec", 0),
+                                            "source": "youtube_rec", "usage_tag": "사용장면",
+                                        })
+                                        st.session_state.selected_recommended_video = _rv
+                                        st.success("✅ 영상 추가 완료! STEP 2로 이동합니다.")
+                                        st.session_state.current_step = 2
+                                        st.rerun()
+                                else:
+                                    st.error(f"다운로드에 실패했습니다. 직접 업로드해주세요. ({_rec_err or ''})")
+                        st.link_button("🔗 YouTube에서 보기", _rv["url"], use_container_width=True)
+
     _src_opts = ["🌐 외부 URL 다운로드 (yt-dlp)", "🎬 Pexels 배경 영상", "🎥 영상 직접 업로드"]
     _src_map = {"🌐 외부 URL 다운로드 (yt-dlp)": "URL", "🎬 Pexels 배경 영상": "이미지", "🎥 영상 직접 업로드": "영상"}
     _src_reverse = {"URL": "🌐 외부 URL 다운로드 (yt-dlp)", "이미지": "🎬 Pexels 배경 영상", "영상": "🎥 영상 직접 업로드"}
