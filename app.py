@@ -249,6 +249,13 @@ defaults = {
     # ── OG 스크래핑 / yt-dlp ──
     "og_tags":{},               # scrape_og_tags 결과
     "pexels_ai_keywords":[],    # Claude AI 추천 Pexels 검색 키워드
+    # ── 초보자 UX / Anti-Shadowban ──
+    "onboarding_done":False,
+    "anti_shadowban_enabled":False,
+    # ── 추천 영상 (7차) ──
+    "recommended_videos":[],
+    "recommended_keywords":[],
+    "selected_recommended_video":None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -313,6 +320,25 @@ TEMPLATES = {
 
 # ── 프로젝트 선택 화면 ──────────────────────────────────────────
 def render_project_select():
+    # ── 온보딩 가이드 (최초 1회) ──
+    if not st.session_state.get("onboarding_done", False):
+        st.markdown("""<div style="background:linear-gradient(135deg,#FFF5F0,#FFF0E6);border:2px solid #FF6B35;border-radius:12px;padding:24px;margin-bottom:20px;">
+<h4 style="margin:0 0 12px;">숏폼 영상 만들기, 이렇게 간단합니다!</h4>
+<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:12px 0;font-size:1.05rem;flex-wrap:wrap;">
+<span>🛒 제품 입력</span><span style="color:#aaa;">&rarr;</span>
+<span>🎬 영상 확보</span><span style="color:#aaa;">&rarr;</span>
+<span>✂️ 클립 편집</span><span style="color:#aaa;">&rarr;</span>
+<span>🤖 AI 스크립트·자막</span><span style="color:#aaa;">&rarr;</span>
+<span>📥 다운로드</span>
+</div>
+<p style="text-align:center;color:#6B7280;font-size:0.85rem;margin:8px 0 0;">API 키 없이도 URL 파싱·영상 다운로드·업로드는 사용 가능합니다.</p>
+</div>""", unsafe_allow_html=True)
+        _ob_c = st.columns([1, 2, 1])
+        with _ob_c[1]:
+            if st.button("시작하기", type="primary", use_container_width=True, key="onboarding_start"):
+                st.session_state.onboarding_done = True
+                st.rerun()
+
     st.markdown('<div class="ux-card"><div class="ux-card-title">HOME</div><h4>📁 프로젝트 선택</h4><p class="ux-sub">프로젝트를 선택하거나 새로 만들어주세요</p></div>', unsafe_allow_html=True)
 
     # 새 프로젝트 생성
@@ -600,7 +626,7 @@ def call_claude(system_prompt, user_msg, max_tokens=1500):
         )
         return m.content[0].text.strip()
     except Exception as e:
-        st.error(f"Claude API 오류: {e}")
+        st.error(f"AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요. ({type(e).__name__})")
         return None
 
 def _translate_keyword_to_english(keyword):
@@ -1193,7 +1219,7 @@ def assemble_hook_versions(clips, body_subs, body_tts_path, target_dur, crop_rat
                            ass_path=None, bgm_path=None, bgm_volume=0.2,
                            cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF",
                            hook_clip_path=None, hooks=None, hook_dur=3.0,
-                           pattern_interrupt=False, retention_booster=False):
+                           pattern_interrupt=False, retention_booster=False, anti_shadowban=False):
     """Hook A/B/C 버전별 영상 생성. assemble_video()를 재사용."""
     if not hooks or not clips:
         return []
@@ -1258,7 +1284,8 @@ def assemble_hook_versions(clips, body_subs, body_tts_path, target_dur, crop_rat
             cta_text=cta_text, cta_position=cta_position,
             cta_duration=cta_duration, cta_color=cta_color,
             pattern_interrupt=pattern_interrupt,
-            retention_booster=retention_booster
+            retention_booster=retention_booster,
+            anti_shadowban=anti_shadowban
         )
 
         # 7. 결과 이름 변경
@@ -1287,7 +1314,33 @@ def assemble_hook_versions(clips, body_subs, body_tts_path, target_dur, crop_rat
     return results
 
 
-def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2, cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF", pattern_interrupt=False, retention_booster=False):
+# ── Anti-Shadowban 경량 딥에디팅 필터 ──
+def _build_anti_shadowban_vfilters():
+    """Anti-Shadowban 비디오 필터 생성: 속도/밝기/대비/좌우반전."""
+    import random
+    filters = []
+    speed = 1.0 + random.uniform(0.02, 0.05)
+    filters.append(f"setpts=PTS/{speed:.4f}")
+    brightness = random.uniform(-0.02, 0.02)
+    contrast = 1.0 + random.uniform(-0.02, 0.02)
+    filters.append(f"eq=brightness={brightness:.4f}:contrast={contrast:.4f}")
+    if random.random() < 0.5:
+        filters.append("hflip")
+    return filters, speed
+
+def _get_anti_shadowban_sub_offset():
+    """Anti-Shadowban 자막 위치 오프셋 (±10px)."""
+    import random
+    return random.randint(-10, 10)
+
+def _get_anti_shadowban_bgm_filter():
+    """Anti-Shadowban BGM 피치 변조."""
+    import random
+    rate = random.uniform(0.99, 1.01)
+    return f"asetrate=44100*{rate:.4f},aresample=44100"
+
+
+def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_path=None, bgm_path=None, bgm_volume=0.2, cta_text=None, cta_position="하단", cta_duration=3, cta_color="#FFFFFF", pattern_interrupt=False, retention_booster=False, anti_shadowban=False):
     """FFmpeg로 실제 영상 조립 (에러 체크 포함, ASS 자막 + BGM 믹싱 지원)"""
     tmp = _ensure_dir("shortform_build")
 
@@ -1334,7 +1387,7 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
     ], capture_output=True, text=True, timeout=120)
 
     if r1.returncode != 0 or not concat_out.exists():
-        return None, f"클립 연결 실패: {r1.stderr[-300:] if r1.stderr else 'unknown error'}"
+        return None, f"영상 클립 연결에 실패했습니다. 클립 파일이 손상되었거나 형식이 다를 수 있어요."
 
     # 4. 9:16 크롭 + 자막 오버레이
     vf_filters = []
@@ -1344,6 +1397,14 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
         vf_filters.append("scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920")
     else:
         vf_filters.append("scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080")
+
+    # Anti-Shadowban 비디오 필터
+    _as_speed = 1.0
+    _as_bgm_filter = None
+    if anti_shadowban:
+        _as_vfilters, _as_speed = _build_anti_shadowban_vfilters()
+        vf_filters.extend(_as_vfilters)
+        _as_bgm_filter = _get_anti_shadowban_bgm_filter()
 
     # 자막: ASS 파일 우선 → drawtext fallback
     if ass_path and os.path.exists(ass_path):
@@ -1445,10 +1506,13 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
     if has_bgm:
         cmd += ["-stream_loop", "-1", "-i", bgm_path]
 
+    # Anti-Shadowban BGM 피치 시프트
+    _bgm_pre = f",{_as_bgm_filter}" if (anti_shadowban and _as_bgm_filter) else ""
+
     if has_tts and has_bgm:
         tts_idx, bgm_idx = 1, 2
         cmd += ["-filter_complex",
-                f"[{bgm_idx}:a]volume={bgm_volume}[bgml];[{tts_idx}:a][bgml]amix=inputs=2:duration=first:dropout_transition=2[aout]",
+                f"[{bgm_idx}:a]volume={bgm_volume}{_bgm_pre}[bgml];[{tts_idx}:a][bgml]amix=inputs=2:duration=first:dropout_transition=2[aout]",
                 "-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-map", "0:v", "-map", "[aout]", "-c:a", "aac", "-shortest",
                 str(final_out)]
@@ -1459,7 +1523,7 @@ def assemble_video(clips, subs, tts_path, target_dur, crop_ratio="9:16", ass_pat
     elif has_bgm:
         bgm_idx = 1
         cmd += ["-filter_complex",
-                f"[{bgm_idx}:a]volume={bgm_volume}[bgm]",
+                f"[{bgm_idx}:a]volume={bgm_volume}{_bgm_pre}[bgm]",
                 "-vf", vf_str, "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-map", "0:v", "-map", "[bgm]", "-c:a", "aac", "-shortest",
                 str(final_out)]
@@ -2083,6 +2147,7 @@ def render_step1():
     # ── 쿠팡 URL + OG 자동 추출 ──
     st.markdown("#### 🛒 쿠팡 상품 URL")
     coupang_url = st.text_input("쿠팡 상품 URL", placeholder="https://www.coupang.com/vp/products/...", label_visibility="collapsed")
+    st.caption("쿠팡 파트너스가 처음이신가요? [가입 안내 보기](https://partners.coupang.com/)")
 
     col_extract, col_status = st.columns([1, 3])
     with col_extract:
@@ -2844,7 +2909,7 @@ def render_step1():
 def render_step2():
     target_dur = st.session_state.get("_w_target_dur", 30)
 
-    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 02</div><h4>클립 편집</h4><p class="ux-sub">순서 조정 & 용도 태그</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 02</div><h4>클립 편집</h4><p class="ux-sub">클립 순서를 정리하고 용도를 태그하세요. 인트로 &rarr; 제품소개 &rarr; 사용장면 &rarr; 아웃트로 순서 추천!</p></div>', unsafe_allow_html=True)
 
     if st.session_state.clips:
         clips = st.session_state.clips
@@ -2857,10 +2922,12 @@ def render_step2():
             with c2:
                 if i > 0 and st.button("↑", key=f"up_{i}"):
                     clips[i-1], clips[i] = clips[i], clips[i-1]
+                    st.session_state.clips = clips
                     st.rerun()
             with c3:
                 if i < len(clips)-1 and st.button("↓", key=f"dn_{i}"):
                     clips[i+1], clips[i] = clips[i], clips[i+1]
+                    st.session_state.clips = clips
                     st.rerun()
             with c4:
                 nm = clip["name"][:40] + "..." if len(clip["name"]) > 40 else clip["name"]
@@ -2929,7 +2996,7 @@ def render_step3():
     target_dur = st.session_state.get("_w_target_dur", 30)
     crop_ratio = st.session_state.get("_w_crop_ratio", "9:16 세로형 (숏폼)")
 
-    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 03</div><h4>영상 생성</h4><p class="ux-sub">제목 · 스크립트 · TTS · 자막 · BGM · 조립</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 03</div><h4>영상 생성</h4><p class="ux-sub">AI가 제목 · 대본 · 음성 · 자막을 자동 생성합니다.</p></div>', unsafe_allow_html=True)
 
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
@@ -2988,6 +3055,22 @@ def render_step3():
         if st.session_state.retention_booster_enabled:
             st.caption("자막 밀도 + 시각 변화 + Benefit 강조 + CTA 최적화")
         st.markdown('</div>', unsafe_allow_html=True)
+
+    # ── Anti-Shadowban 딥에디팅 토글 ──
+    st.markdown('<div class="opt-card" style="margin-top:8px;">', unsafe_allow_html=True)
+    _as_c1, _as_c2 = st.columns([1, 4])
+    with _as_c1:
+        st.session_state.anti_shadowban_enabled = st.checkbox(
+            "Anti-Shadowban", value=st.session_state.anti_shadowban_enabled,
+            key="opt_anti_shadowban", label_visibility="collapsed"
+        )
+    with _as_c2:
+        st.markdown("**🛡️ Anti-Shadowban 딥에디팅**")
+        if st.session_state.anti_shadowban_enabled:
+            st.caption("속도 ±2~5% / 밝기·대비 ±2% / 좌우반전 50% / BGM 피치 ±1% — 플랫폼 중복감지 우회")
+        else:
+            st.caption("영상 해시값을 미세하게 변형하여 플랫폼 중복감지를 우회합니다.")
+    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     # ── AI 제목 9개 생성 (쿠팡 전용) ──
@@ -2998,7 +3081,7 @@ def render_step3():
         st.markdown("#### 1️⃣ AI 제목 자동 생성 (9개)")
         st.markdown('<div class="info-box">3가지 유형 × 3개씩 = 총 9개 제목을 AI가 생성합니다. 📌 버튼으로 원하는 제목을 바로 적용하세요.</div>', unsafe_allow_html=True)
 
-        if st.button("✨ AI 제목 9개 생성", key="gen_titles"):
+        if st.button("✨ AI 제목 9개 생성", key="gen_titles", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("3가지 유형 × 3개 제목 생성 중..."):
                 cmode = st.session_state.content_mode
                 mode_emphasis = {
@@ -3011,7 +3094,7 @@ def render_step3():
                 }
                 result = call_claude(
                     "숏폼 제목 전문가. 정확히 아래 형식으로 출력. 제목만 출력.",
-                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n{mode_emphasis.get(cmode, '')}\n\n아래 3가지 유형별로 각 3개씩 총 9개의 숏폼 제목을 만들어줘.\n\n[궁금증유발]\n- '이거 모르면 손해', '진짜 이게 돼?' 같은 호기심 자극 스타일\n[문제해결]\n- '이것 때문에 고민 끝', '해결한 제품' 같은 솔루션 제시 스타일\n[혜택강조]\n- '이 가격에?', '가성비 끝판왕' 같은 가격/혜택 강조 스타일\n\n조건:\n- 각 제목 15자 이내\n- 이모지 1개 포함\n- 유형 라벨 없이, 3줄 빈 줄로 유형 구분\n- 총 9줄 출력 (유형당 3줄)"
+                    f"제품: {pname}\n카테고리: {pcat}\n콘텐츠 목적: {cmode}\n{mode_emphasis.get(cmode, '')}\n\n아래 3가지 유형별로 각 3개씩 총 9개의 숏폼 제목을 만들어줘.\n\n[궁금증유발]\n- '이거 모르면 손해', '진짜 이게 돼?' 같은 호기심 자극 스타일\n[문제해결]\n- '이것 때문에 고민 끝', '해결한 제품' 같은 솔루션 제시 스타일\n[혜택강조]\n- '이 가격에?', '가성비 끝판왕' 같은 가격/혜택 강조 스타일\n\n조건:\n- 각 제목 15자 이내\n- 이모지 1개 포함\n- 유형 라벨 없이, 3줄 빈 줄로 유형 구분\n- 총 9줄 출력 (유형당 3줄)\n- 매번 완전히 새로운 표현과 구조 사용\n- 숫자형, 질문형, 감탄형, 비유형, 명령형 등 다양한 스타일 골고루 혼합"
                 )
                 if result:
                     lines = [l.strip() for l in result.strip().split("\n") if l.strip()]
@@ -3072,7 +3155,7 @@ def render_step3():
         _len_map = {"15초 (초단편)": ("15초", "15~20초", "3~5문장"), "30초 (표준)": ("30초", "30~45초", "8~12문장"), "60초 (롱폼)": ("60초", "50~60초", "15~20문장")}
         _len_label, _len_range, _len_sentences = _len_map.get(_script_length, ("30초", "30~45초", "8~12문장"))
 
-        if st.button("✨ AI 스크립트 생성", key="gen_coupang_script"):
+        if st.button("✨ AI 스크립트 생성", key="gen_coupang_script", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("스크립트 생성 중..."):
                 cmode = st.session_state.content_mode
                 mode_guide = {
@@ -3155,7 +3238,7 @@ def render_step3():
 
         cmode = st.session_state.content_mode
         _pdesc = st.session_state.get("_w_pdesc", "") or ""
-        if st.button("🪝 후킹 문구 5개 생성", key="gen_hooks"):
+        if st.button("🪝 후킹 문구 5개 생성", key="gen_hooks", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("후킹 문구 생성 중..."):
                 hook_result = call_claude(
                     "숏폼 후킹 전문가. 번호 매기지 말고 한 줄씩만 출력. 각 줄이 하나의 후킹 문구.",
@@ -3566,7 +3649,8 @@ def render_step3():
                                 ass_path=ass_file, bgm_path=bgm_file, bgm_volume=bgm_vol,
                                 cta_text=cta_t, cta_position=cta_p, cta_duration=cta_d, cta_color=cta_clr,
                                 hook_clip_path=None, hooks=st.session_state.hook_versions, hook_dur=3.0,
-                                pattern_interrupt=_pi_on, retention_booster=_rb_on
+                                pattern_interrupt=_pi_on, retention_booster=_rb_on,
+                                anti_shadowban=st.session_state.anti_shadowban_enabled
                             )
                             _hook_status.update(label=f"✅ Hook {_hook_count}개 버전 생성 완료!", state="complete")
                         except subprocess.TimeoutExpired:
@@ -3611,7 +3695,8 @@ def render_step3():
                                                       cta_text=cta_t, cta_position=cta_p,
                                                       cta_duration=cta_d, cta_color=cta_clr,
                                                       pattern_interrupt=_pi_on,
-                                                      retention_booster=_rb_on)
+                                                      retention_booster=_rb_on,
+                                                      anti_shadowban=st.session_state.anti_shadowban_enabled)
 
                     if output and os.path.exists(output):
                         prog.progress(100)
@@ -3621,7 +3706,7 @@ def render_step3():
                         st.video(output)
                     else:
                         prog.progress(100)
-                        st.error(f"❌ 영상 조립 실패: {err_msg or 'FFmpeg 오류'}")
+                        st.error(f"❌ 영상 생성에 실패했습니다. 클립이 너무 짧거나 없을 수 있어요. ({err_msg or '알 수 없는 오류'})")
 
     # ═══════════════════════════════════════════════════════════════
     # Multi-Video Generator (영상 5개 한번에 생성)
@@ -3675,7 +3760,10 @@ def render_step3():
 
                     # 1. 해당 템플릿의 설정 가져오기
                     _mv_tpl = TEMPLATES.get(_mvc["template"], {})
-                    _mv_cta_text = _mv_tpl.get("cta_text", st.session_state.get("cta_text", ""))
+                    import random as _mv_rnd
+                    _mv_cta_cat = st.session_state.coupang_category or "기타"
+                    _mv_cta_pool = CTA_LIBRARY.get(_mv_cta_cat, CTA_LIBRARY.get("기타", [])) + CTA_COMMON
+                    _mv_cta_text = _mv_rnd.choice(_mv_cta_pool) if _mv_cta_pool else _mv_tpl.get("cta_text", "")
                     _mv_cta_color = _mv_tpl.get("sub_color", st.session_state.get("cta_color", "#FFFFFF"))
                     _mv_cta_pos = _mv_tpl.get("cta_position", "하단")
                     _mv_cta_dur = st.session_state.get("cta_duration", 3)
@@ -3701,7 +3789,8 @@ def render_step3():
                             cta_text=_mv_cta_text, cta_position=_mv_cta_pos,
                             cta_duration=_mv_cta_dur, cta_color=_mv_cta_color,
                             hook_clip_path=None, hooks=_mv_hook, hook_dur=3.0,
-                            pattern_interrupt=_mv_pi, retention_booster=_mv_rb
+                            pattern_interrupt=_mv_pi, retention_booster=_mv_rb,
+                            anti_shadowban=st.session_state.anti_shadowban_enabled
                         )
                     except Exception as _mv_err:
                         _mv_ver_results = []
@@ -3769,7 +3858,7 @@ def render_step3():
 # render_step4: ⬇️ 미리보기 + 다운로드
 # ═════════════════════════════════════════════════════════════════
 def render_step4():
-    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 04</div><h4>다운로드</h4><p class="ux-sub">해시태그 · 설명란 · 썸네일 · 다운로드</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 04</div><h4>다운로드</h4><p class="ux-sub">완성된 영상을 미리보고 다운로드하세요.</p></div>', unsafe_allow_html=True)
 
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
@@ -3782,7 +3871,7 @@ def render_step4():
         st.markdown("#### 1️⃣ 해시태그 자동 생성 (AI + DB)")
         st.markdown('<div class="info-box">AI 맞춤 10개 + 카테고리 DB 5개 + 공통 필수 5개 = 총 20개 해시태그를 생성합니다.</div>', unsafe_allow_html=True)
 
-        if st.button("✨ 해시태그 20개 생성", key="gen_hashtags"):
+        if st.button("✨ 해시태그 20개 생성", key="gen_hashtags", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("AI 해시태그 생성 + 카테고리 DB 조합 중..."):
                 cmode = st.session_state.content_mode
                 result = call_claude(
@@ -3806,6 +3895,7 @@ def render_step4():
                             all_tags.append(t)
                             seen_tags.add(t)
                     all_tags = all_tags[:20]
+                    _rnd.shuffle(all_tags)
 
                     st.session_state.hashtag_list = all_tags
                     st.session_state.hashtag_selections = {t: True for t in all_tags}
@@ -3849,7 +3939,7 @@ def render_step4():
 
         # ── 설명란 자동 생성 ──
         st.markdown("#### 2️⃣ 유튜브 / 인스타 설명란 자동 생성")
-        if st.button("✨ 설명란 자동 생성", key="gen_desc"):
+        if st.button("✨ 설명란 자동 생성", key="gen_desc", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("설명란 생성 중..."):
                 aff_link = st.session_state.coupang_affiliate_link
                 link_instruction = ""
