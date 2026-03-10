@@ -923,45 +923,56 @@ def generate_youtube_keywords(product_name, category="기타"):
 
 
 def search_youtube_recommendations(keywords, max_results=5):
-    """youtube-search-python으로 추천 영상 검색. 키워드별 2개 → 중복제거 → ≤90초 → top 5."""
-    try:
-        from youtubesearchpython import VideosSearch
-    except ImportError:
-        return []
+    """yt-dlp ytsearch로 추천 영상 검색. 키워드별 3개 → 중복제거 → ≤90초 → top N."""
     all_results = []
     seen_ids = set()
     for kw in keywords:
         try:
-            search = VideosSearch(kw, limit=2)
-            items = search.result().get("result", [])
-            for item in items:
-                vid_id = item.get("id", "")
+            cmd = [
+                "yt-dlp", f"ytsearch3:{kw}",
+                "--flat-playlist",
+                "--print", "%(id)s|||%(title)s|||%(duration)s|||%(channel)s|||%(view_count)s|||%(url)s",
+                "--no-check-certificates",
+                "--socket-timeout", "15",
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if r.returncode != 0:
+                continue
+            for line in r.stdout.strip().split("\n"):
+                if not line.strip() or "|||" not in line:
+                    continue
+                parts = line.strip().split("|||")
+                if len(parts) < 6:
+                    continue
+                vid_id, title, dur_raw, channel, views_raw, url = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
                 if vid_id in seen_ids:
                     continue
                 seen_ids.add(vid_id)
-                dur_str = item.get("duration", "0:00") or "0:00"
-                parts = dur_str.split(":")
-                dur_sec = 0
                 try:
-                    if len(parts) == 2:
-                        dur_sec = int(parts[0]) * 60 + int(parts[1])
-                    elif len(parts) == 3:
-                        dur_sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                except ValueError:
+                    dur_sec = int(float(dur_raw)) if dur_raw and dur_raw != "NA" else 0
+                except (ValueError, TypeError):
                     dur_sec = 0
-                if dur_sec > 90 or dur_sec == 0:
+                if dur_sec > 90:
                     continue
-                thumbs = item.get("thumbnails", [])
-                thumb_url = thumbs[0].get("url", "") if thumbs else ""
-                channel = item.get("channel", {})
-                ch_name = channel.get("name", "") if isinstance(channel, dict) else str(channel)
-                views = item.get("viewCount", {})
-                views_text = views.get("short", "") if isinstance(views, dict) else ""
-                link = item.get("link", "")
-                is_short = "/shorts/" in link
+                # 조회수 포맷
+                try:
+                    vc = int(views_raw) if views_raw and views_raw != "NA" else 0
+                    if vc >= 1_000_000:
+                        views_text = f"{vc/1_000_000:.1f}M"
+                    elif vc >= 1_000:
+                        views_text = f"{vc/1_000:.1f}K"
+                    else:
+                        views_text = str(vc) if vc else ""
+                except (ValueError, TypeError):
+                    views_text = ""
+                dur_min = dur_sec // 60
+                dur_s = dur_sec % 60
+                dur_str = f"{dur_min}:{dur_s:02d}" if dur_sec > 0 else "0:00"
+                is_short = "/shorts/" in url or dur_sec <= 60
+                thumb_url = f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
                 all_results.append({
-                    "id": vid_id, "title": item.get("title", ""), "url": link,
-                    "thumbnail": thumb_url, "channel": ch_name, "duration": dur_str,
+                    "id": vid_id, "title": title, "url": url,
+                    "thumbnail": thumb_url, "channel": channel, "duration": dur_str,
                     "dur_sec": dur_sec, "views": views_text, "is_short": is_short, "keyword": kw,
                 })
         except Exception:
@@ -2621,11 +2632,14 @@ def render_step1():
                 if st.button("🤖 AI 추천 키워드 생성", key="ai_pexels_kw_btn_b2", use_container_width=True):
                     with st.spinner("AI가 Pexels 검색 키워드를 추천 중..."):
                         _kw_result = call_claude(
-                            "Pexels 스톡 영상 검색 전문가. 영어 키워드만 출력.",
+                            "Pexels 스톡 영상 검색 전문가. 제품과 직접 관련된 영어 키워드만 출력. 반드시 제품 자체를 촬영한 영상을 찾을 수 있는 키워드 위주.",
                             f"제품: {_ai_pname_b2}\n카테고리: {st.session_state.coupang_category or '기타'}\n\n"
-                            "이 제품의 숏폼 영상에 어울리는 Pexels 검색 키워드 5개를 추천해줘.\n"
-                            "각 키워드는 영어 2~3단어, 한 줄에 하나씩, 번호 없이 출력.\n"
-                            "예시:\nproduct showcase\nminimal background\nlifestyle aesthetic",
+                            "이 제품을 직접 보여주는 Pexels 스톡 영상 검색 키워드 5개를 추천해줘.\n"
+                            "규칙:\n"
+                            "1. 반드시 제품명/제품 종류를 키워드에 포함할 것\n"
+                            "2. 'minimal background', 'lifestyle aesthetic' 같은 추상적 키워드 금지\n"
+                            "3. 각 키워드는 영어 2~4단어, 한 줄에 하나씩, 번호 없이 출력\n"
+                            "예시 (아이폰인 경우):\niphone closeup\nsmartphone screen\nphone unboxing hand\nmobile app screen\niphone camera test",
                             max_tokens=200
                         )
                         if _kw_result:
