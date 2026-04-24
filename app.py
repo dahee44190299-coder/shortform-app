@@ -6,6 +6,9 @@ from PIL import Image, ImageDraw, ImageFont
 import project_store
 import clip_analyzer
 import tracking
+import category_templates
+import regeneration
+import eval_metrics
 
 # ── FFmpeg PATH 자동 감지 (Windows 로컬용) ─────────────────────────
 _FFMPEG_CANDIDATES = [
@@ -475,6 +478,42 @@ def render_project_select():
                         st.success("저장됨!")
                         st.rerun()
 
+        # ── 🔁 저성과 영상 자동 감지 (Phase 1-C 수익률 기반 재생성) ──
+        _under = regeneration.find_underperforming(_all_track, hours=24, max_clicks=0)
+        if _under:
+            st.markdown("#### 🔁 재생성 추천 — 24시간 내 클릭 0회")
+            st.caption("다른 Hook 패턴으로 재생성하면 클릭률이 회복될 수 있습니다. 같은 스크립트로 다시 만들어도 결과는 같습니다.")
+            for _u in _under[:10]:
+                _alt = regeneration.suggest_alternative_hook(_u.get("hook_type", ""))
+                with st.container(border=True):
+                    _uc1, _uc2 = st.columns([3, 2])
+                    with _uc1:
+                        st.markdown(f"**{_u.get('title', '(제목 미상)')}** · {_u.get('project_name', '')}")
+                        st.caption(f"원본 Hook: `{_u.get('hook_type') or '미상'}` → 추천 패턴: **{_alt['label']}**")
+                        st.caption(f"가이드: {_alt['hint']}")
+                    with _uc2:
+                        if st.button("📋 재생성 프롬프트 복사", key=f"regen_{_u.get('sub_id', _u.get('video_id',''))}"):
+                            st.session_state["_regen_prompt"] = regeneration.make_regeneration_prompt(_u)
+                            st.session_state["_regen_title"] = _u.get("title", "")
+            if st.session_state.get("_regen_prompt"):
+                with st.expander(f"📝 재생성 프롬프트 — {st.session_state.get('_regen_title','')}"):
+                    st.code(st.session_state["_regen_prompt"], language="markdown")
+                    st.caption("위 프롬프트를 STEP 2 스크립트 생성에 복사하거나, Claude에 직접 붙여넣어 새 Hook 3개를 받을 수 있습니다.")
+
+    # ── 📊 품질 메트릭 (Phase 1-C 평가) — 추적 레코드와 독립 표시 ──
+    with st.expander("📊 품질 메트릭 — LLM 호출 편차 (7일)"):
+        _stats = eval_metrics.compute_stats(days=7)
+        if _stats["count"] == 0:
+            st.caption("아직 LLM 호출 기록이 없습니다. STEP 2/3에서 스크립트를 생성하면 지표가 누적됩니다.")
+        else:
+            _qc1, _qc2, _qc3 = st.columns(3)
+            _qc1.metric("7일 호출 수", _stats["count"])
+            _qc2.metric("평균 글자 수", _stats["metrics"]["char_len"]["mean"])
+            _qc3.metric("평균 지연", f"{_stats['latency_ms']['mean']}ms")
+            st.caption(f"Hook 포함률 {_stats['metrics']['has_hook_pct']}% · CTA 포함률 {_stats['metrics']['has_cta_pct']}% · 글자 표준편차 {_stats['metrics']['char_len']['stdev']}")
+            if _stats["by_prompt_type"]:
+                st.caption("프롬프트별 호출 수: " + ", ".join(f"{k}={v}" for k, v in _stats["by_prompt_type"].items()))
+
 
 # ── 템플릿 선택 화면 ──────────────────────────────────────────
 def _apply_template(template_key):
@@ -694,19 +733,29 @@ def get_api_key(name):
 def has_key(name):
     return bool(get_api_key(name))
 
-def call_claude(system_prompt, user_msg, max_tokens=1500):
+def call_claude(system_prompt, user_msg, max_tokens=1500, prompt_type="generic"):
     api_key = get_api_key("ANTHROPIC_API_KEY")
     if not api_key:
         return None
     try:
         import anthropic
         c = anthropic.Anthropic(api_key=api_key)
+        _t0 = time.time()
         m = c.messages.create(
             model="claude-sonnet-4-20250514", max_tokens=max_tokens,
             system=system_prompt,
             messages=[{"role":"user","content":user_msg}]
         )
-        return m.content[0].text.strip()
+        text = m.content[0].text.strip()
+        try:
+            eval_metrics.log_llm_call(
+                prompt_type=prompt_type, model="claude-sonnet-4-20250514",
+                response=text, prompt_chars=len(system_prompt) + len(user_msg),
+                latency_ms=int((time.time() - _t0) * 1000),
+            )
+        except Exception:
+            pass
+        return text
     except Exception as e:
         st.error(f"AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요. ({type(e).__name__})")
         return None
@@ -3469,6 +3518,9 @@ def render_step3():
                                "편의성": "사용 편리함, 시간 절약, 간편함 강조. before/after 비교.",
                                "희소성": "한정 수량, 품절 임박, '지금 아니면 못 삼' 분위기 조성. 긴급성 강조."}
 
+                _inferred_cat = category_templates.infer_category(pname, pcat)
+                _cat_hint = category_templates.format_category_hint(_inferred_cat)
+                st.session_state["_last_inferred_category"] = _inferred_cat
                 result = call_claude(
                     "쿠팡 파트너스 숏폼 대본 전문 작가. 대본만 출력. 다른 설명 없이 대본 텍스트만.",
                     f"""제품: {pname}
@@ -3480,7 +3532,8 @@ def render_step3():
 목표 길이: {_len_range} ({_len_sentences})
 {_tpl_tone}
 
-아래 구조로 {_len_range} 분량 숏폼 광고 대본을 작성해줘.
+{_cat_hint}
+위 카테고리 가이드를 우선 반영해서 {_len_range} 분량 숏폼 광고 대본을 작성해줘.
 
 [Hook — 첫 3초] 시청자가 스크롤을 멈추게 만드는 충격적/궁금한 첫 문장. 질문형, 놀람형, 손해회피형 중 하나.
 [문제 제시 — 5초] 타겟 고객의 일상 불편함/고민을 공감하며 제시. '혹시 ~한 적 있으세요?' 패턴.
@@ -3493,10 +3546,13 @@ def render_step3():
 - 한 문장 15자 이내 (짧고 리듬감 있게)
 - 구어체, 감정적 표현
 - 각 섹션 앞에 [Hook], [문제], [해결책], [증거], [CTA] 태그 표시
-- {_len_sentences} 분량"""
+- {_len_sentences} 분량""",
+                    prompt_type="script_main",
                 )
                 if result:
                     st.session_state.coupang_script = result
+                    _prof = category_templates.get_template(_inferred_cat)
+                    st.caption(f"🎯 카테고리 템플릿 자동 적용: **{_prof['label']}** — {_prof['hook_pattern']}")
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
 
