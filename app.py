@@ -116,18 +116,49 @@ def generate_tts_elevenlabs(text, output_path, voice_id="21m00Tcm4TlvDq8ikWAM", 
     return False
 
 
+def generate_tts_edge(text, output_path, voice="ko-KR-SunHiNeural", speed=1.0):
+    """Microsoft Edge TTS (무료, API 키 불필요). 성공 시 True.
+    voice 예: ko-KR-SunHiNeural(여성), ko-KR-InJoonNeural(남성), ko-KR-HyunsuMultilingualNeural"""
+    try:
+        import asyncio, edge_tts
+        rate_pct = int((speed - 1.0) * 100)
+        rate_str = f"{'+' if rate_pct >= 0 else ''}{rate_pct}%"
+        async def _run():
+            comm = edge_tts.Communicate(text, voice, rate=rate_str)
+            await comm.save(output_path)
+        try:
+            asyncio.run(_run())
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(_run())
+            loop.close()
+        return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except Exception:
+        return False
+
+
 def generate_tts_auto(text, output_path, speaker="nara", voice_id="21m00Tcm4TlvDq8ikWAM", speed=1.0):
-    """session_state.tts_engine 기준으로 자동 분기. 성공 시 True."""
+    """session_state.tts_engine 기준으로 자동 분기. 성공 시 True.
+    엔진 우선순위: 선택 엔진 → edge(무료 폴백) → 나머지 유료 엔진."""
     import streamlit as _st
-    engine = _st.session_state.get("tts_engine", "elevenlabs")
-    if engine == "elevenlabs":
+    engine = _st.session_state.get("tts_engine", "edge")
+    if engine == "edge":
+        if generate_tts_edge(text, output_path, speed=speed):
+            return True
         if generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed):
             return True
         return generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5))
-    else:
-        if generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5)):
+    if engine == "elevenlabs":
+        if generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed):
             return True
-        return generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed)
+        if generate_tts_edge(text, output_path, speed=speed):
+            return True
+        return generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5))
+    if generate_tts_clova(text, output_path, speaker=speaker, speed=int((speed - 1) * 5)):
+        return True
+    if generate_tts_edge(text, output_path, speed=speed):
+        return True
+    return generate_tts_elevenlabs(text, output_path, voice_id=voice_id, speed=speed)
 
 
 def cleanup_hook_temp_files():
@@ -238,7 +269,7 @@ defaults = {
     "hook_test_enabled":False, "hook_version_count":2, "hook_versions":[],
     "pattern_interrupt_enabled":True, "retention_booster_enabled":True,
     # ── TTS 엔진 ──
-    "tts_engine":"elevenlabs",  # "clova" or "elevenlabs"
+    "tts_engine":"edge",  # "edge" (free, no key) | "elevenlabs" | "clova"
     # ── 프로젝트 / 템플릿 ──
     "app_phase":"project_select",  # "project_select" | "template_select" | "pipeline"
     "active_project_id":"",
@@ -270,7 +301,7 @@ TEMPLATES = {
         "cta_position": "하단",
         "retention_booster": True,
         "pattern_interrupt": True,
-        "tts_engine": "elevenlabs",
+        "tts_engine": "edge",
         "content_mode": "구매전환형",
         "cta_text": "쿠팡에서 확인하기",
         "sub_color": "#FF6B35",
@@ -283,7 +314,7 @@ TEMPLATES = {
         "cta_position": "하단",
         "retention_booster": True,
         "pattern_interrupt": False,
-        "tts_engine": "elevenlabs",
+        "tts_engine": "edge",
         "content_mode": "클릭유도형",
         "cta_text": "지금 바로 구매하기",
         "sub_color": "#FFFFFF",
@@ -296,7 +327,7 @@ TEMPLATES = {
         "cta_position": "하단",
         "retention_booster": True,
         "pattern_interrupt": True,
-        "tts_engine": "clova",
+        "tts_engine": "edge",
         "content_mode": "리뷰형",
         "cta_text": "링크 클릭!",
         "sub_color": "#FFD700",
@@ -309,7 +340,7 @@ TEMPLATES = {
         "cta_position": "하단",
         "retention_booster": True,
         "pattern_interrupt": True,
-        "tts_engine": "elevenlabs",
+        "tts_engine": "edge",
         "content_mode": "문제해결형",
         "cta_text": "이거 하나면 해결",
         "sub_color": "#FF4444",
@@ -404,7 +435,7 @@ def _apply_template(template_key):
     st.session_state.content_mode = tpl.get("content_mode", "클릭유도형")
     st.session_state.pattern_interrupt_enabled = tpl.get("pattern_interrupt", True)
     st.session_state.retention_booster_enabled = tpl.get("retention_booster", True)
-    st.session_state.tts_engine = tpl.get("tts_engine", "elevenlabs")
+    st.session_state.tts_engine = tpl.get("tts_engine", "edge")
     st.session_state.cta_position = tpl.get("cta_position", "하단")
     # Template 차별화 필드
     if tpl.get("cta_text"):
@@ -685,11 +716,41 @@ def download_video(url, dest_path):
         pass
     return False
 
+def _search_youtube_ytdlp(keyword, n=6):
+    """yt-dlp 기반 YouTube 검색 (API 키 불필요).
+    --dump-json 으로 메타만 가져와 다운로드는 하지 않음."""
+    try:
+        from yt_dlp import YoutubeDL
+        opts = {
+            "quiet": True, "no_warnings": True, "extract_flat": True,
+            "skip_download": True, "noplaylist": True,
+            "default_search": "ytsearch",
+        }
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"ytsearch{int(n)}:{keyword} shorts", download=False)
+        results = []
+        for item in (info.get("entries") or [])[:n]:
+            vid_id = item.get("id", "")
+            if not vid_id:
+                continue
+            results.append({
+                "id": vid_id,
+                "title": item.get("title", ""),
+                "thumbnail": (item.get("thumbnails") or [{}])[-1].get("url", "")
+                              if item.get("thumbnails") else f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg",
+                "channel": item.get("uploader", "") or item.get("channel", ""),
+                "url": f"https://youtube.com/shorts/{vid_id}",
+            })
+        return results
+    except Exception:
+        return []
+
+
 def search_youtube_shorts(keyword, n=6):
-    """YouTube Data API로 관련 숏폼 영상 검색 (참고용)"""
+    """YouTube 숏폼 영상 검색. API 키 있으면 Data API, 없으면 yt-dlp 폴백."""
     key = get_api_key("YOUTUBE_API_KEY")
     if not key:
-        return []
+        return _search_youtube_ytdlp(keyword, n=n)
     try:
         r = requests.get("https://www.googleapis.com/youtube/v3/search",
                          params={"key": key, "q": keyword + " #shorts",
@@ -698,7 +759,7 @@ def search_youtube_shorts(keyword, n=6):
                                  "order": "viewCount"},
                          timeout=10)
         if r.status_code != 200:
-            return []
+            return _search_youtube_ytdlp(keyword, n=n)
         results = []
         for item in r.json().get("items", []):
             vid_id = item["id"]["videoId"]
@@ -710,9 +771,9 @@ def search_youtube_shorts(keyword, n=6):
                 "channel": snippet.get("channelTitle", ""),
                 "url": f"https://youtube.com/shorts/{vid_id}",
             })
-        return results
+        return results or _search_youtube_ytdlp(keyword, n=n)
     except:
-        return []
+        return _search_youtube_ytdlp(keyword, n=n)
 
 def download_video_ytdlp(url, max_size_mb=100):
     """yt-dlp로 외부 영상 다운로드 (더우인/틱톡/유튜브 등).
@@ -3477,14 +3538,20 @@ def render_step3():
     # ── 🔊 음성 생성 엔진 선택 ──
     _has_clova = has_key("CLOVA_TTS_CLIENT_ID")
     _has_el = has_key("ELEVENLABS_API_KEY")
-    _engine_opts = ["🌍 ElevenLabs (자연스럽고 감정 풍부)", "🇰🇷 네이버 클로바 (안정적, 한국어 특화)"]
-    _engine_map = {"🌍 ElevenLabs (자연스럽고 감정 풍부)": "elevenlabs", "🇰🇷 네이버 클로바 (안정적, 한국어 특화)": "clova"}
-    _engine_reverse = {"elevenlabs": _engine_opts[0], "clova": _engine_opts[1]}
-    _default_engine = st.session_state.tts_engine
-    if not _has_el and _has_clova:
-        _default_engine = "clova"
-    elif _has_el:
-        _default_engine = "elevenlabs"
+    _engine_opts = [
+        "🆓 Edge TTS (무료, API 키 불필요)",
+        "🌍 ElevenLabs (자연스럽고 감정 풍부)",
+        "🇰🇷 네이버 클로바 (안정적, 한국어 특화)",
+    ]
+    _engine_map = {
+        _engine_opts[0]: "edge",
+        _engine_opts[1]: "elevenlabs",
+        _engine_opts[2]: "clova",
+    }
+    _engine_reverse = {"edge": _engine_opts[0], "elevenlabs": _engine_opts[1], "clova": _engine_opts[2]}
+    _default_engine = st.session_state.get("tts_engine", "edge")
+    if _default_engine not in ("edge", "elevenlabs", "clova"):
+        _default_engine = "edge"
     _cur_label = _engine_reverse.get(_default_engine, _engine_opts[0])
     _sel_engine = st.radio("🔊 음성 생성 엔진 선택", _engine_opts, horizontal=True,
                            index=_engine_opts.index(_cur_label) if _cur_label in _engine_opts else 0,
@@ -3498,6 +3565,15 @@ def render_step3():
                 "nbora - 밝은 여성", "ndain - 차분한 남성",
             ])
             elevenlabs_voice_id = None
+        elif st.session_state.tts_engine == "edge":
+            edge_voices = {
+                "SunHi - 여성 (자연스러움)": "ko-KR-SunHiNeural",
+                "InJoon - 남성 (신뢰감)": "ko-KR-InJoonNeural",
+                "Hyunsu - 다국어 남성": "ko-KR-HyunsuMultilingualNeural",
+            }
+            tts_voice = st.selectbox("Edge 음성", list(edge_voices.keys()))
+            st.session_state["_edge_voice"] = edge_voices[tts_voice]
+            elevenlabs_voice_id = None
         else:
             el_voices = {
                 "Rachel (여성, 차분)": "21m00Tcm4TlvDq8ikWAM",
@@ -3510,7 +3586,9 @@ def render_step3():
         tts_speed = st.slider("속도", 0.7, 1.5, 1.0, 0.1)
 
     if st.session_state.script:
-        if st.session_state.tts_engine == "clova":
+        if st.session_state.tts_engine == "edge":
+            has_tts_key = True  # 키 불필요
+        elif st.session_state.tts_engine == "clova":
             has_tts_key = _has_clova
         else:
             has_tts_key = _has_el
