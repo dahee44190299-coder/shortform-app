@@ -1,0 +1,67 @@
+{
+  "_meta": {
+    "version": 1,
+    "created_at": "2026-04-24",
+    "purpose": "Phase 1-C 평가 데이터셋 — 카테고리 추론 + 스크립트 품질 검증.",
+    "structure": "각 케이스: id, category, product_title, expected_category, optional script test fields."
+  },
+  "cases": [
+    {"id": "ev01", "product_title": "삼성 갤럭시 버즈3 프로 노이즈캔슬링 무선이어폰", "expected_category": "digital"},
+    {"id": "ev02", "product_title": "애플 아이폰 15 케이스 투명 충격흡수", "expected_category": "digital"},
+    {"id": "ev03", "product_title": "LG 그램 17인치 노트북 2024 모델", "expected_category": "digital"},
+    {"id": "ev04", "product_title": "로지텍 무선 마우스 MX 앵커", "expected_category": "digital"},
+    {"id": "ev05", "product_title": "65W USB C 고속 충전기 멀티포트", "expected_category": "digital"},
+    {"id": "ev06", "product_title": "27인치 4K 모니터 게이밍 144Hz", "expected_category": "digital"},
+    {"id": "ev07", "product_title": "기계식 키보드 청축 텐키리스 RGB", "expected_category": "digital"},
+    {"id": "ev08", "product_title": "샤오미 미밴드 9 스마트워치", "expected_category": "digital"},
+
+    {"id": "ev09", "product_title": "닥터자르트 시카페어 토너 200ml 진정", "expected_category": "beauty"},
+    {"id": "ev10", "product_title": "코스알엑스 스네일 92 에센스", "expected_category": "beauty"},
+    {"id": "ev11", "product_title": "이니스프리 그린티 씨드 세럼 80ml", "expected_category": "beauty"},
+    {"id": "ev12", "product_title": "메디힐 시트 마스크 10매 모공 케어", "expected_category": "beauty"},
+    {"id": "ev13", "product_title": "에뛰드 글로우온 쿠션 21호 자연 커버", "expected_category": "beauty"},
+    {"id": "ev14", "product_title": "라네즈 워터슬리핑 마스크 70ml 수분", "expected_category": "beauty"},
+    {"id": "ev15", "product_title": "헤라 블랙쿠션 본품 + 리필", "expected_category": "beauty"},
+    {"id": "ev16", "product_title": "닥터지 레드 블레미쉬 클리어 수딩 크림", "expected_category": "beauty"},
+
+    {"id": "ev17", "product_title": "농심 신라면 멀티팩 30봉 박스", "expected_category": "food"},
+    {"id": "ev18", "product_title": "맥심 모카골드 커피믹스 320T", "expected_category": "food"},
+    {"id": "ev19", "product_title": "정관장 홍삼정 EVERYTIME 30포 영양제", "expected_category": "food"},
+    {"id": "ev20", "product_title": "오리온 초코파이 초콜릿 12개입 3박스", "expected_category": "food"},
+    {"id": "ev21", "product_title": "씨제이 비비고 김치만두 700g 냉동", "expected_category": "food"},
+    {"id": "ev22", "product_title": "닭가슴살 100g 30팩 고단백 다이어트", "expected_category": "food"},
+    {"id": "ev23", "product_title": "비타민C 1000 프리미엄 90정 6개월", "expected_category": "food"},
+    {"id": "ev24", "product_title": "프로틴 보충제 단백질 쉐이크 2kg 초코맛", "expected_category": "food"},
+
+    {"id": "ev25", "product_title": "뚜레쥬르 욕실 곰팡이 제거제 강력", "expected_category": "household"},
+    {"id": "ev26", "product_title": "다이슨 무선청소기 V15 디텍트", "expected_category": "household"},
+    {"id": "ev27", "product_title": "주방 배수구 냄새 제거 트랩 6개입", "expected_category": "household"},
+    {"id": "ev28", "product_title": "세탁세제 액체 8L 대용량 향균", "expected_category": "household"},
+    {"id": "ev29", "product_title": "물때 제거제 욕실 변기 강력 코팅", "expected_category": "household"},
+    {"id": "ev30", "product_title": "수납 정리 박스 3단 슬라이드 서랍", "expected_category": "household"},
+
+    {"id": "ev31", "product_title": "유니클로 에어리즘 반팔 티셔츠 남성", "expected_category": "fashion"},
+    {"id": "ev32", "product_title": "나이키 에어맥스 운동화 270 화이트", "expected_category": "fashion"},
+    {"id": "ev33", "product_title": "샘소나이트 백팩 노트북 수납 17인치", "expected_category": "fashion"},
+    {"id": "ev34", "product_title": "여성 원피스 봄 신상 캐주얼 코디", "expected_category": "fashion"},
+    {"id": "ev35", "product_title": "컨버스 척테일러 70 신발 클래식", "expected_category": "fashion"},
+    {"id": "ev36", "product_title": "캠퍼 가죽 지갑 남성 반지갑 RFID", "expected_category": "fashion"},
+
+    {"id": "ev37", "product_title": "팸퍼스 베이비 드라이 기저귀 4단계 144매", "expected_category": "baby_kids"},
+    {"id": "ev38", "product_title": "남양 임페리얼 분유 3단계 800g 6캔", "expected_category": "baby_kids"},
+    {"id": "ev39", "product_title": "유아 이유식 마스터 칼 도마 세트", "expected_category": "baby_kids"},
+    {"id": "ev40", "product_title": "어린이 안전 카시트 3단 회전 ISOFIX", "expected_category": "baby_kids"},
+    {"id": "ev41", "product_title": "아이 영어 동화책 리딩북 50권 세트", "expected_category": "baby_kids"},
+
+    {"id": "ev42", "product_title": "강아지 사료 연어 5kg 소형견 전용", "expected_category": "pet"},
+    {"id": "ev43", "product_title": "고양이 캣타워 5단 스크래쳐 포함", "expected_category": "pet"},
+    {"id": "ev44", "product_title": "반려동물 자동급식기 음성 녹음 4L", "expected_category": "pet"},
+    {"id": "ev45", "product_title": "강아지 산책 하네스 리드줄 세트 M", "expected_category": "pet"},
+    {"id": "ev46", "product_title": "고양이 간식 츄르 닭가슴살 100개입", "expected_category": "pet"},
+
+    {"id": "ev47", "product_title": "여행용 캐리어 24인치 확장 가능 TSA락", "expected_category": "general"},
+    {"id": "ev48", "product_title": "차량용 거치대 무선충전 자석 송풍구형", "expected_category": "digital"},
+    {"id": "ev49", "product_title": "프리미엄 요가매트 6mm TPE 친환경", "expected_category": "general"},
+    {"id": "ev50", "product_title": "공기청정기 H13 헤파필터 30평형", "expected_category": "household"}
+  ]
+}
