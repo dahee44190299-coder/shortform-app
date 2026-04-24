@@ -195,3 +195,62 @@ def mark_downloaded(project_id, version_id):
             _write_project_file(project_id, data)
             return True
     return False
+
+
+# ═══════════════════════════════════════════════════════════════
+# 추적 링크 (Phase 1-B) — 영상별 subId / deeplink / 매출 귀속
+# ═══════════════════════════════════════════════════════════════
+
+def add_tracking_record(project_id, record):
+    """프로젝트에 추적 레코드 1건 추가. 동일 video_id 있으면 덮어쓰기."""
+    data = _read_project_file(project_id)
+    if not data:
+        return False
+    records = data.setdefault("tracking", [])
+    vid = record.get("video_id")
+    for i, r in enumerate(records):
+        if r.get("video_id") == vid:
+            records[i] = record
+            _write_project_file(project_id, data)
+            return True
+    records.append(record)
+    _write_project_file(project_id, data)
+    return True
+
+
+def list_tracking_records(project_id):
+    """프로젝트의 모든 추적 레코드."""
+    data = _read_project_file(project_id)
+    if not data:
+        return []
+    return data.get("tracking", [])
+
+
+def update_tracking_metrics(project_id, video_id, manual_clicks=None,
+                             manual_revenue_krw=None, uploaded_to=None):
+    """사용자가 파트너스 대시보드 보고 수동 입력하는 매출/클릭 갱신."""
+    data = _read_project_file(project_id)
+    if not data:
+        return False
+    for r in data.get("tracking", []):
+        if r.get("video_id") == video_id:
+            if manual_clicks is not None:
+                r["manual_clicks"] = int(manual_clicks)
+            if manual_revenue_krw is not None:
+                r["manual_revenue_krw"] = int(manual_revenue_krw)
+            if uploaded_to is not None:
+                r["uploaded_to"] = list(uploaded_to)
+            _write_project_file(project_id, data)
+            return True
+    return False
+
+
+def list_all_tracking_records():
+    """모든 프로젝트의 추적 레코드 통합 (대시보드용)."""
+    out = []
+    for p in list_projects():
+        for r in list_tracking_records(p["id"]):
+            r2 = dict(r)
+            r2["project_name"] = p.get("name", "")
+            out.append(r2)
+    return out

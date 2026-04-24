@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 import project_store
 import clip_analyzer
+import tracking
 
 # ── FFmpeg PATH 자동 감지 (Windows 로컬용) ─────────────────────────
 _FFMPEG_CANDIDATES = [
@@ -423,6 +424,54 @@ def render_project_select():
                     st.rerun()
     elif not projects:
         st.info("아직 프로젝트가 없습니다. 위에서 새로 만들어주세요!")
+
+    # ── 📊 추적 대시보드 (Phase 1-B 해자: 영상→매출 가시화) ──
+    _all_track = project_store.list_all_tracking_records()
+    if _all_track:
+        st.markdown("---")
+        st.markdown("#### 📊 추적 대시보드 — 영상별 매출 귀속")
+        st.caption("파트너스 대시보드에서 클릭/매출 확인 후 아래 표에 입력하세요. (영상이 매출을 냈는지 보이는 유일한 도구)")
+
+        _total_clicks = sum(int(r.get("manual_clicks", 0) or 0) for r in _all_track)
+        _total_rev = sum(int(r.get("manual_revenue_krw", 0) or 0) for r in _all_track)
+        _mc1, _mc2, _mc3 = st.columns(3)
+        _mc1.metric("총 영상 수", f"{len(_all_track)}개")
+        _mc2.metric("총 클릭", f"{_total_clicks:,}")
+        _mc3.metric("총 매출", f"{_total_rev:,}원")
+
+        for _i, _rec in enumerate(reversed(_all_track[-20:])):
+            with st.container(border=True):
+                _rc1, _rc2, _rc3 = st.columns([3, 2, 2])
+                with _rc1:
+                    st.markdown(f"**{_rec.get('project_name', '')}** · {_rec.get('title', '')}")
+                    st.caption(f"subId: `{_rec.get('sub_id', '')}` · {_rec.get('created_at', '')[:10]}")
+                    if _rec.get("shorten_url"):
+                        st.caption(f"🔗 {_rec['shorten_url']}")
+                with _rc2:
+                    _new_clicks = st.number_input(
+                        "클릭 수",
+                        value=int(_rec.get("manual_clicks", 0) or 0),
+                        min_value=0,
+                        step=1,
+                        key=f"track_clk_{_rec.get('sub_id', _i)}"
+                    )
+                with _rc3:
+                    _new_rev = st.number_input(
+                        "매출 (원)",
+                        value=int(_rec.get("manual_revenue_krw", 0) or 0),
+                        min_value=0,
+                        step=1000,
+                        key=f"track_rev_{_rec.get('sub_id', _i)}"
+                    )
+                if (_new_clicks != int(_rec.get("manual_clicks", 0) or 0) or
+                    _new_rev != int(_rec.get("manual_revenue_krw", 0) or 0)):
+                    if st.button("💾 저장", key=f"track_save_{_rec.get('sub_id', _i)}"):
+                        project_store.update_tracking_metrics(
+                            _rec["project_id"], _rec["video_id"],
+                            manual_clicks=_new_clicks, manual_revenue_krw=_new_rev
+                        )
+                        st.success("저장됨!")
+                        st.rerun()
 
 
 # ── 템플릿 선택 화면 ──────────────────────────────────────────
@@ -4193,6 +4242,82 @@ def render_step4():
     else:
         st.info("STEP 1에서 쿠팡 제품을 먼저 등록하세요.")
         st.markdown("---")
+
+    # ── 🔗 추적 링크 자동 생성 (Phase 1-B 해자) ──
+    st.markdown("#### 🔗 추적 링크 자동 생성")
+    st.markdown('<div class="info-box">영상마다 고유한 <strong>추적 ID(subId)</strong>를 부여해 어떤 영상이 매출 냈는지 추적합니다. 다른 도구는 영상만 만들고 끝, 우리는 매출까지 봅니다.</div>', unsafe_allow_html=True)
+
+    _track_pid = st.session_state.active_project_id
+    _track_url_default = st.session_state.coupang_affiliate_link or st.session_state.get("_last_coupang_url", "")
+    _track_url = st.text_input(
+        "추적할 쿠팡 URL (상품 URL 또는 기존 파트너스 링크)",
+        value=_track_url_default,
+        key="tracking_url_input",
+        placeholder="https://www.coupang.com/vp/products/..."
+    )
+
+    _track_c1, _track_c2 = st.columns([1, 1])
+    with _track_c1:
+        _gen_track = st.button("🎯 이 영상용 추적 링크 생성", key="btn_gen_tracking", type="primary", use_container_width=True)
+    with _track_c2:
+        _has_partners_keys = bool(get_api_key("COUPANG_PARTNERS_ACCESS_KEY")) and bool(get_api_key("COUPANG_PARTNERS_SECRET_KEY"))
+        if _has_partners_keys:
+            st.success("✅ 쿠팡 Partners API 키 감지 — deeplink 자동 생성")
+        else:
+            st.info("ℹ️ Partners API 키 없음 — subId만 생성 후 수동 적용 안내")
+
+    if _gen_track:
+        if not _track_pid:
+            st.error("❌ 활성 프로젝트가 없습니다. 먼저 프로젝트를 생성/선택하세요.")
+        elif not _track_url.strip():
+            st.error("❌ 쿠팡 URL을 입력하세요.")
+        else:
+            sub_id = tracking.generate_video_subid()
+            ak = get_api_key("COUPANG_PARTNERS_ACCESS_KEY")
+            sk = get_api_key("COUPANG_PARTNERS_SECRET_KEY")
+            with st.spinner("추적 링크 생성 중..."):
+                deeplink_result = tracking.create_partners_deeplink(_track_url.strip(), sub_id, ak, sk)
+            _video_id_for_track = (
+                st.session_state.get("output_path", "")
+                or f"manual_{int(time.time()*1000)}"
+            )
+            _vid_basename = os.path.basename(_video_id_for_track) if _video_id_for_track else f"manual_{sub_id}"
+            _record = tracking.make_tracking_record(
+                video_id=_vid_basename,
+                project_id=_track_pid,
+                coupang_url=_track_url.strip(),
+                deeplink_result=deeplink_result if deeplink_result.get("ok") else {"subId": sub_id},
+                template=st.session_state.get("active_template", ""),
+                title=st.session_state.coupang_product or "",
+            )
+            project_store.add_tracking_record(_track_pid, _record)
+            st.session_state["_last_tracking_record"] = _record
+            st.session_state["_last_tracking_result"] = deeplink_result
+            st.rerun()
+
+    _last_rec = st.session_state.get("_last_tracking_record")
+    _last_res = st.session_state.get("_last_tracking_result")
+    if _last_rec:
+        if _last_res and _last_res.get("ok"):
+            st.success(f"✅ 추적 링크 생성 완료! subId: `{_last_rec['sub_id']}`")
+            st.markdown("**🔗 단축 링크 (영상 설명란에 붙여넣기):**")
+            st.code(_last_rec["shorten_url"] or _last_res.get("shortenUrl", ""), language=None)
+            with st.expander("기술 상세 (랜딩 URL / subId)"):
+                st.code(f"subId        : {_last_rec['sub_id']}\nshortenUrl   : {_last_rec['shorten_url']}\nlandingUrl   : {_last_rec['landing_url']}\noriginalUrl  : {_last_rec['original_url']}", language="text")
+        else:
+            st.warning(f"⚠️ Partners API 실패 또는 키 미설정 → 수동 적용 모드: `{_last_rec['sub_id']}`")
+            if _last_res and _last_res.get("error"):
+                st.caption(f"사유: {_last_res['error']}")
+            st.markdown(tracking.manual_subid_instructions(_last_rec["sub_id"]))
+
+    _all_records = project_store.list_tracking_records(_track_pid) if _track_pid else []
+    if _all_records:
+        with st.expander(f"📋 이 프로젝트 추적 레코드 ({len(_all_records)}개)"):
+            for _r in reversed(_all_records[-10:]):
+                _short = _r.get("shorten_url") or "(키 없음 — 수동 적용)"
+                st.markdown(f"- **{_r.get('sub_id', '')}** · {_r.get('title', '')} · {_r.get('created_at', '')[:19]}  \n  → {_short}")
+
+    st.markdown("---")
 
     # ── 썸네일 자동 생성 ──
     st.markdown("#### 3️⃣ 썸네일 반자동 생성")
