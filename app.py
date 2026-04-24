@@ -284,6 +284,7 @@ defaults = {
     # ── 초보자 UX / Anti-Shadowban ──
     "onboarding_done":False,
     "anti_shadowban_enabled":False,
+    "active_preset":"standard",
     # ── 추천 영상 (7차) ──
     "recommended_videos":[],
     "recommended_keywords":[],
@@ -355,15 +356,16 @@ def render_project_select():
     # ── 온보딩 가이드 (최초 1회) ──
     if not st.session_state.get("onboarding_done", False):
         st.markdown("""<div style="background:linear-gradient(135deg,#FFF5F0,#FFF0E6);border:2px solid #FF6B35;border-radius:12px;padding:24px;margin-bottom:20px;">
-<h4 style="margin:0 0 12px;">숏폼 영상 만들기, 이렇게 간단합니다!</h4>
-<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:12px 0;font-size:1.05rem;flex-wrap:wrap;">
-<span>🛒 제품 입력</span><span style="color:#aaa;">&rarr;</span>
-<span>🎬 영상 확보</span><span style="color:#aaa;">&rarr;</span>
-<span>✂️ 클립 편집</span><span style="color:#aaa;">&rarr;</span>
-<span>🤖 AI 스크립트·자막</span><span style="color:#aaa;">&rarr;</span>
-<span>📥 다운로드</span>
+<h3 style="margin:0 0 8px;text-align:center;">⚡ 5분에 영상 1개 + 🔗 추적 링크 자동</h3>
+<p style="text-align:center;color:#6B7280;font-size:0.95rem;margin:0 0 16px;">쿠팡 URL 붙여넣기 → 5분 후 다운로드 → 매출까지 추적</p>
+<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:8px 0;font-size:1rem;flex-wrap:wrap;">
+<span>🛒 URL</span><span style="color:#aaa;">&rarr;</span>
+<span>🎬 영상</span><span style="color:#aaa;">&rarr;</span>
+<span>🤖 AI 스크립트</span><span style="color:#aaa;">&rarr;</span>
+<span>🔗 추적 링크</span><span style="color:#aaa;">&rarr;</span>
+<span>📊 매출 대시보드</span>
 </div>
-<p style="text-align:center;color:#6B7280;font-size:0.85rem;margin:8px 0 0;">API 키 없이도 URL 파싱·영상 다운로드·업로드는 사용 가능합니다.</p>
+<p style="text-align:center;color:#6B7280;font-size:0.82rem;margin:12px 0 0;"><strong>다른 도구와 차이</strong>: 영상만 만들고 끝이 아니라, 영상별 매출까지 본다.</p>
 </div>""", unsafe_allow_html=True)
         _ob_c = st.columns([1, 2, 1])
         with _ob_c[1]:
@@ -3265,76 +3267,100 @@ def render_step3():
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
 
-    # ═══════ 🎯 조회수 최적화 패널 ═══════
-    st.markdown('<div class="ux-card"><div class="ux-card-title">OPTIMIZE</div><h4>🎯 조회수 최적화</h4><p class="ux-sub">조회수와 완시율을 높이기 위한 자동 최적화 옵션입니다. 영상 조립 시 자동 적용됩니다.</p></div>', unsafe_allow_html=True)
+    # ═══════ ⚡ 3 프리셋 ═══════
+    # 1-A: 8개 개별 토글 → 3 프리셋으로 단순화. 고급 사용자는 expander로 개별 제어.
+    st.markdown('<div class="ux-card"><div class="ux-card-title">MODE</div><h4>⚡ 영상 모드 선택</h4><p class="ux-sub">한 번에 전부 설정. 3초 안에 고르세요.</p></div>', unsafe_allow_html=True)
 
-    opt_c1, opt_c2, opt_c3 = st.columns(3)
-    with opt_c1:
-        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
-        st.markdown("**🎯 Hook A/B 테스트**")
-        st.caption("첫 3초만 다른 영상 2~3개 자동 생성")
-        st.session_state.hook_test_enabled = st.checkbox(
-            "Hook A/B 활성화",
-            value=st.session_state.hook_test_enabled,
-            help="같은 제품으로 첫 3초만 다른 영상 2~3개를 자동 생성합니다.",
-            key="opt_hook_test",
-            label_visibility="collapsed"
-        )
-        if st.session_state.hook_test_enabled:
-            if not st.session_state.clips:
-                st.markdown('<span class="badge badge-dark">⚠️ 클립 필요</span>', unsafe_allow_html=True)
-                st.caption("STEP 1에서 클립을 먼저 추가하세요")
-            else:
+    PRESETS = {
+        "fast": {
+            "label": "🚀 빠른 모드",
+            "desc": "1개 영상 · 최소 옵션 · 1분 내 조립",
+            "hook_test": False,
+            "hook_count": 2,
+            "pattern_interrupt": False,
+            "retention_booster": True,
+            "anti_shadowban": False,
+        },
+        "standard": {
+            "label": "✨ 표준 모드 (권장)",
+            "desc": "1개 영상 · 품질 최적화 토글 전체 ON",
+            "hook_test": False,
+            "hook_count": 2,
+            "pattern_interrupt": True,
+            "retention_booster": True,
+            "anti_shadowban": True,
+        },
+        "ab_test": {
+            "label": "🧪 A·B 테스트 모드",
+            "desc": "첫 3초 다른 영상 2~3개 · 어떤 Hook이 먹히는지 테스트",
+            "hook_test": True,
+            "hook_count": 2,
+            "pattern_interrupt": True,
+            "retention_booster": True,
+            "anti_shadowban": True,
+        },
+    }
+
+    _current_preset = st.session_state.get("active_preset", "standard")
+    _preset_cols = st.columns(3)
+    _preset_keys = list(PRESETS.keys())
+    for _i, _pk in enumerate(_preset_keys):
+        with _preset_cols[_i]:
+            _cfg = PRESETS[_pk]
+            _is_active = _current_preset == _pk
+            _btn_type = "primary" if _is_active else "secondary"
+            _active_mark = "  ✅" if _is_active else ""
+            st.markdown(f"**{_cfg['label']}**{_active_mark}")
+            st.caption(_cfg['desc'])
+            if st.button(f"선택", key=f"preset_btn_{_pk}", type=_btn_type, use_container_width=True):
+                st.session_state.active_preset = _pk
+                st.session_state.hook_test_enabled = _cfg["hook_test"]
+                st.session_state.hook_version_count = _cfg["hook_count"]
+                st.session_state.pattern_interrupt_enabled = _cfg["pattern_interrupt"]
+                st.session_state.retention_booster_enabled = _cfg["retention_booster"]
+                st.session_state.anti_shadowban_enabled = _cfg["anti_shadowban"]
+                st.rerun()
+
+    # 현재 활성 옵션 요약
+    _active_tags = []
+    if st.session_state.hook_test_enabled: _active_tags.append(f"🎯 Hook A/B ({st.session_state.hook_version_count}버전)")
+    if st.session_state.pattern_interrupt_enabled: _active_tags.append("⚡ Pattern Interrupt")
+    if st.session_state.retention_booster_enabled: _active_tags.append("📈 Retention Booster")
+    if st.session_state.anti_shadowban_enabled: _active_tags.append("🛡️ Anti-Shadowban")
+    if _active_tags:
+        st.markdown(f'<div class="info-box">활성 옵션: {" · ".join(_active_tags)}</div>', unsafe_allow_html=True)
+
+    # ── 고급 설정 (접기) ──
+    with st.expander("⚙️ 고급 설정 — 개별 토글 (프리셋 덮어쓰기)"):
+        _adv_c1, _adv_c2 = st.columns(2)
+        with _adv_c1:
+            st.session_state.hook_test_enabled = st.checkbox(
+                "🎯 Hook A/B 테스트 (첫 3초만 다른 영상 여러 개)",
+                value=st.session_state.hook_test_enabled,
+                key="opt_hook_test",
+            )
+            if st.session_state.hook_test_enabled:
                 st.session_state.hook_version_count = st.radio(
                     "버전 수", [2, 3], horizontal=True, key="opt_hook_count",
                     index=0 if st.session_state.hook_version_count == 2 else 1
                 )
-                st.caption("A: 문제 제시 / B: 놀람 / C: 손해 회피")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with opt_c2:
-        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
-        st.markdown("**⚡ Pattern Interrupt**")
-        st.caption("중간에 시각 변화를 자동 삽입")
-        st.session_state.pattern_interrupt_enabled = st.checkbox(
-            "Pattern Interrupt 활성화",
-            value=st.session_state.pattern_interrupt_enabled,
-            help="영상 중간에 zoom, jump cut, 키워드 강조 등 시각 변화를 자동 삽입합니다.",
-            key="opt_pattern_interrupt",
-            label_visibility="collapsed"
-        )
-        if st.session_state.pattern_interrupt_enabled:
-            st.caption("10%: zoom / 25%: cut / 40%: 강조 / 60%: flash")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with opt_c3:
-        st.markdown('<div class="opt-card">', unsafe_allow_html=True)
-        st.markdown("**📈 Retention Booster**")
-        st.caption("완시율 극대화 자동 최적화")
-        st.session_state.retention_booster_enabled = st.checkbox(
-            "Retention Booster 활성화",
-            value=st.session_state.retention_booster_enabled,
-            help="완시율 최적화: 첫 5초 자막 밀도 증가, 2초 시각 변화, Benefit 강조, CTA 타이밍 최적화",
-            key="opt_retention_booster",
-            label_visibility="collapsed"
-        )
-        if st.session_state.retention_booster_enabled:
-            st.caption("자막 밀도 + 시각 변화 + Benefit 강조 + CTA 최적화")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ── Anti-Shadowban 딥에디팅 토글 ──
-    st.markdown('<div class="opt-card" style="margin-top:8px;">', unsafe_allow_html=True)
-    _as_c1, _as_c2 = st.columns([1, 4])
-    with _as_c1:
-        st.session_state.anti_shadowban_enabled = st.checkbox(
-            "Anti-Shadowban", value=st.session_state.anti_shadowban_enabled,
-            key="opt_anti_shadowban", label_visibility="collapsed"
-        )
-    with _as_c2:
-        st.markdown("**🛡️ Anti-Shadowban 딥에디팅**")
-        if st.session_state.anti_shadowban_enabled:
-            st.caption("속도 ±2~5% / 밝기·대비 ±2% / 좌우반전 50% / BGM 피치 ±1% — 플랫폼 중복감지 우회")
-        else:
-            st.caption("영상 해시값을 미세하게 변형하여 플랫폼 중복감지를 우회합니다.")
-    st.markdown('</div>', unsafe_allow_html=True)
+            st.session_state.pattern_interrupt_enabled = st.checkbox(
+                "⚡ Pattern Interrupt (중간 zoom/cut/강조 자동 삽입)",
+                value=st.session_state.pattern_interrupt_enabled,
+                key="opt_pattern_interrupt",
+            )
+        with _adv_c2:
+            st.session_state.retention_booster_enabled = st.checkbox(
+                "📈 Retention Booster (완시율 최적화)",
+                value=st.session_state.retention_booster_enabled,
+                key="opt_retention_booster",
+            )
+            st.session_state.anti_shadowban_enabled = st.checkbox(
+                "🛡️ Anti-Shadowban (해시값 미세 변형, 중복감지 우회)",
+                value=st.session_state.anti_shadowban_enabled,
+                key="opt_anti_shadowban",
+            )
+        st.caption("※ 개별 토글 변경 시 프리셋 ✅는 유지되지만 실제 설정은 토글 값이 우선합니다.")
     st.markdown("---")
 
     # ── AI 제목 9개 생성 (쿠팡 전용) ──
@@ -4139,7 +4165,7 @@ def render_step3():
 # render_step4: ⬇️ 미리보기 + 다운로드
 # ═════════════════════════════════════════════════════════════════
 def render_step4():
-    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 04</div><h4>다운로드</h4><p class="ux-sub">완성된 영상을 미리보고 다운로드하세요.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 04</div><h4>🔗 추적 링크 + 다운로드</h4><p class="ux-sub">영상별 매출 추적 subId 생성 → 해시태그/설명 → 다운로드. <strong>해자: 다른 도구는 여기가 없다.</strong></p></div>', unsafe_allow_html=True)
 
     if not has_key("ANTHROPIC_API_KEY"):
         st.markdown('<div class="demo-banner">⚠️ ANTHROPIC_API_KEY 미설정 — AI 기능이 작동하지 않습니다</div>', unsafe_allow_html=True)
