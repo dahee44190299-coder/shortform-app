@@ -3,3 +3,8 @@ __pycache__/
 *.pyc
 .claude/
 secrets_template.toml
+.venv/
+streamlit.log
+.streamlit/secrets.toml
+shortform_projects/
+test_edge.mp3
