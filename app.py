@@ -1523,27 +1523,78 @@ def scrape_og_tags(url):
     return result
 
 def extract_coupang_info(url):
-    """쿠팡 URL에서 제품명 추출 시도 (OG 태그 우선, fallback title 태그)"""
-    try:
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        resp = requests.get(url, headers=headers, timeout=5)
-        resp.encoding = resp.apparent_encoding or "utf-8"
-        soup = BeautifulSoup(resp.text, "html.parser")
-        # OG 태그 우선
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            name = og_title["content"].replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
-            if name and len(name) > 2:
-                return {"name": name, "success": True}
-        # fallback: <title>
-        match = re.search(r'<title>(.*?)</title>', resp.text)
-        if match:
-            title = match.group(1).replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
-            if title and len(title) > 2:
-                return {"name": title, "success": True}
-    except:
-        pass
-    return {"name": "", "success": False}
+    """쿠팡 URL에서 제품명 추출 시도.
+
+    중요: 쿠팡은 서버 요청을 강력히 차단(HTTP 403)하므로 자동 추출 성공률 낮음.
+    여러 헤더 + 모바일 사이트 폴백 시도. 모두 실패 시 productId만 추출하여 placeholder.
+
+    Returns: {"name": str, "success": bool, "error": str (실패 시),
+              "product_id": str (URL에서 추출된 ID)}
+    """
+    # URL에서 productId 추출 (실패 시 placeholder로 사용)
+    product_id = ""
+    pid_match = re.search(r'products/(\d+)', url)
+    if pid_match:
+        product_id = pid_match.group(1)
+
+    base_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Ch-Ua": '"Chromium";v="131", "Google Chrome";v="131"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
+        "Referer": "https://www.google.com/",
+    }
+
+    # 시도 순서: PC 사이트 → 모바일 사이트
+    attempts = [
+        ("PC", url, base_headers),
+        ("Mobile", url.replace("www.coupang.com", "m.coupang.com"),
+         {**base_headers, "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+                                          "AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                                          "Version/17.0 Mobile/15E148 Safari/604.1"}),
+    ]
+
+    last_error = "알 수 없는 오류"
+    for label, _url, _headers in attempts:
+        try:
+            resp = requests.get(_url, headers=_headers, timeout=10)
+            resp.encoding = resp.apparent_encoding or "utf-8"
+            if resp.status_code == 403:
+                last_error = f"쿠팡이 자동 추출을 차단했습니다 (HTTP 403). 제품명을 직접 입력해주세요."
+                continue
+            if resp.status_code != 200:
+                last_error = f"HTTP {resp.status_code} ({label})"
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            og_title = soup.find("meta", property="og:title")
+            if og_title and og_title.get("content"):
+                name = og_title["content"].replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
+                if name and len(name) > 2:
+                    return {"name": name, "success": True, "product_id": product_id, "error": ""}
+            match = re.search(r'<title>(.*?)</title>', resp.text)
+            if match:
+                title = match.group(1).replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
+                if title and len(title) > 2:
+                    return {"name": title, "success": True, "product_id": product_id, "error": ""}
+            last_error = f"OG 태그 + title 태그 모두 없음 ({label})"
+        except Exception as e:
+            last_error = f"{type(e).__name__}: {str(e)[:80]}"
+
+    # 모든 시도 실패 — productId placeholder
+    return {
+        "name": f"쿠팡 상품 #{product_id}" if product_id else "",
+        "success": False,
+        "product_id": product_id,
+        "error": last_error,
+    }
 
 def extract_product_images(url):
     """쿠팡/아마존 URL에서 제품 이미지 URL 추출"""
@@ -2108,11 +2159,11 @@ def render_step1():
         do_extract = st.button("🔍 상품 정보 추출", use_container_width=True)
 
     if do_extract and coupang_url:
-        with st.spinner("OG 태그 + 상품 정보 추출 중..."):
+        with st.spinner("OG 태그 + 상품 정보 추출 중... (5-10초)"):
             # OG 태그 스크래핑
             og = scrape_og_tags(coupang_url)
             st.session_state["og_tags"] = og
-            # 기존 제품명 추출
+            # 제품명 추출 시도
             info = extract_coupang_info(coupang_url)
             if info["success"]:
                 st.session_state.coupang_product = info["name"]
@@ -2129,7 +2180,23 @@ def render_step1():
                 if og.get("og_description"):
                     st.caption(f"📝 {og['og_description'][:120]}")
             else:
-                st.warning("자동 추출 실패 — 아래에서 직접 입력해주세요")
+                # 쿠팡 봇 차단 — 명확한 안내 + productId placeholder 제공
+                st.error("⚠️ 쿠팡이 자동 추출을 차단했습니다 (봇 방지 정책)")
+                _err_detail = info.get("error", "")
+                _pid = info.get("product_id", "")
+                with st.expander("자세히 보기"):
+                    st.markdown(f"- 사유: `{_err_detail}`")
+                    if _pid:
+                        st.markdown(f"- 추출된 productId: `{_pid}`")
+                    st.markdown(
+                        "- 쿠팡은 상품 상세 페이지를 외부 서버에서 요청하면 차단합니다.\n"
+                        "- **해결책**: 쿠팡 앱/브라우저에서 상품명을 직접 복사 → 아래 '제품명' 입력란에 붙여넣기.\n"
+                        "- URL은 그대로 STEP 4에서 추적 링크 생성에 사용됩니다."
+                    )
+                # placeholder로 productId 자동 채움 (사용자가 수정 가능)
+                if _pid and not st.session_state.coupang_product:
+                    st.session_state.coupang_product = info.get("name", "")
+                st.info("👇 아래 '제품명'에 직접 입력하시면 모든 기능 정상 작동합니다.")
 
     # ── OG 결과 표시 (이전 추출 결과) ──
     if st.session_state.get("og_tags", {}).get("success") and not do_extract:
