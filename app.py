@@ -9,6 +9,9 @@ import tracking
 import category_templates
 import regeneration
 import eval_metrics
+import api_keys
+import llm
+import stock_video
 
 # ── FFmpeg PATH 자동 감지 (Windows 로컬용) ─────────────────────────
 _FFMPEG_CANDIDATES = [
@@ -722,158 +725,26 @@ CTA_COMMON = [
     "구독하고 꿀템 받으세요!",
 ]
 
-# ── 헬퍼 함수 ─────────────────────────────────────────────────────
-def get_api_key(name):
-    """Secrets 또는 환경변수에서 API 키 가져오기"""
-    try:
-        return st.secrets.get(name, "") or os.getenv(name, "")
-    except:
-        return os.getenv(name, "")
+# ── 헬퍼 함수 (Phase 2 모듈 분리: api_keys/llm/stock_video로 추출, 호환 래퍼) ──
+get_api_key = api_keys.get_api_key
+has_key = api_keys.has_key
 
-def has_key(name):
-    return bool(get_api_key(name))
 
 def call_claude(system_prompt, user_msg, max_tokens=1500, prompt_type="generic"):
-    api_key = get_api_key("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-    try:
-        import anthropic
-        c = anthropic.Anthropic(api_key=api_key)
-        _t0 = time.time()
-        m = c.messages.create(
-            model="claude-sonnet-4-20250514", max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role":"user","content":user_msg}]
-        )
-        text = m.content[0].text.strip()
-        try:
-            eval_metrics.log_llm_call(
-                prompt_type=prompt_type, model="claude-sonnet-4-20250514",
-                response=text, prompt_chars=len(system_prompt) + len(user_msg),
-                latency_ms=int((time.time() - _t0) * 1000),
-            )
-        except Exception:
-            pass
-        return text
-    except Exception as e:
-        st.error(f"AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요. ({type(e).__name__})")
-        return None
-
-def _translate_keyword_to_english(keyword):
-    """한국어 키워드를 Pexels 검색용 영어로 자동 변환."""
-    import re
-    # 이미 영어면 그대로 반환
-    if re.match(r'^[a-zA-Z0-9\s\-]+$', keyword.strip()):
-        return keyword
-    try:
-        result = call_claude(
-            "Translate the following Korean keyword to English for Pexels stock video search. Output ONLY the English keyword (2-3 words max), nothing else.",
-            keyword,
-            max_tokens=30
-        )
-        return result.strip() if result else keyword
-    except Exception:
-        return keyword
+    """app.py 호환 래퍼 — st.error를 on_error로 주입."""
+    return llm.call_claude(
+        system_prompt, user_msg, max_tokens=max_tokens, prompt_type=prompt_type,
+        on_error=lambda e: st.error(
+            f"AI 응답 생성에 실패했습니다. 잠시 후 다시 시도해주세요. ({type(e).__name__})"
+        ),
+    )
 
 
-def search_pexels(keyword, n=12):
-    key = get_api_key("PEXELS_API_KEY")
-    if not key:
-        return []
-    # 한국어 키워드 자동 영어 변환
-    _en_keyword = _translate_keyword_to_english(keyword)
-    try:
-        r = requests.get("https://api.pexels.com/videos/search",
-                         headers={"Authorization": key},
-                         params={"query": _en_keyword, "per_page": n, "orientation": "portrait"},
-                         timeout=10)
-        if r.status_code != 200:
-            return []
-        out = []
-        for v in r.json().get("videos", []):
-            hd = next((f for f in v["video_files"] if f.get("quality") == "hd"), v["video_files"][0])
-            out.append({
-                "id": v["id"], "title": f"{keyword} #{v['id']}",
-                "thumbnail": v.get("image", ""), "duration": f"0:{v['duration']:02d}",
-                "dur_sec": v["duration"], "author": v["user"]["name"],
-                "download_url": hd.get("link", ""),
-            })
-        return out
-    except:
-        return []
+_translate_keyword_to_english = llm.translate_keyword_to_english
+search_pexels = stock_video.search_pexels
+download_video = stock_video.download_video
 
-def download_video(url, dest_path):
-    """Pexels 영상을 실제 다운로드"""
-    try:
-        r = requests.get(url, stream=True, timeout=30)
-        if r.status_code == 200:
-            with open(dest_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return True
-    except:
-        pass
-    return False
-
-def _search_youtube_ytdlp(keyword, n=6):
-    """yt-dlp 기반 YouTube 검색 (API 키 불필요).
-    --dump-json 으로 메타만 가져와 다운로드는 하지 않음."""
-    try:
-        from yt_dlp import YoutubeDL
-        opts = {
-            "quiet": True, "no_warnings": True, "extract_flat": True,
-            "skip_download": True, "noplaylist": True,
-            "default_search": "ytsearch",
-        }
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"ytsearch{int(n)}:{keyword} shorts", download=False)
-        results = []
-        for item in (info.get("entries") or [])[:n]:
-            vid_id = item.get("id", "")
-            if not vid_id:
-                continue
-            results.append({
-                "id": vid_id,
-                "title": item.get("title", ""),
-                "thumbnail": (item.get("thumbnails") or [{}])[-1].get("url", "")
-                              if item.get("thumbnails") else f"https://i.ytimg.com/vi/{vid_id}/hqdefault.jpg",
-                "channel": item.get("uploader", "") or item.get("channel", ""),
-                "url": f"https://youtube.com/shorts/{vid_id}",
-            })
-        return results
-    except Exception:
-        return []
-
-
-def search_youtube_shorts(keyword, n=6):
-    """YouTube 숏폼 영상 검색. API 키 있으면 Data API, 없으면 yt-dlp 폴백."""
-    key = get_api_key("YOUTUBE_API_KEY")
-    if not key:
-        return _search_youtube_ytdlp(keyword, n=n)
-    try:
-        r = requests.get("https://www.googleapis.com/youtube/v3/search",
-                         params={"key": key, "q": keyword + " #shorts",
-                                 "type": "video", "part": "snippet",
-                                 "maxResults": n, "videoDuration": "short",
-                                 "order": "viewCount"},
-                         timeout=10)
-        if r.status_code != 200:
-            return _search_youtube_ytdlp(keyword, n=n)
-        results = []
-        for item in r.json().get("items", []):
-            vid_id = item["id"]["videoId"]
-            snippet = item["snippet"]
-            results.append({
-                "id": vid_id,
-                "title": snippet.get("title", ""),
-                "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", ""),
-                "channel": snippet.get("channelTitle", ""),
-                "url": f"https://youtube.com/shorts/{vid_id}",
-            })
-        return results or _search_youtube_ytdlp(keyword, n=n)
-    except:
-        return _search_youtube_ytdlp(keyword, n=n)
+search_youtube_shorts = stock_video.search_youtube_shorts
 
 def download_video_ytdlp(url, max_size_mb=100):
     """yt-dlp로 외부 영상 다운로드 (더우인/틱톡/유튜브 등).

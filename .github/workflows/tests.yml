@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install minimal test deps
+        # streamlit / anthropic / yt-dlp 등 무거운 deps는 설치 안 함.
+        # 단위 테스트는 모두 외부 호출 없이 동작하도록 설계됨.
+        # streamlit은 api_keys.py에서 try/except로 가드, 없으면 env로 폴백.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest requests
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  category-eval:
+    # 카테고리 추론 정확도 회귀 게이트 (50 케이스 80%+)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python run_eval.py
