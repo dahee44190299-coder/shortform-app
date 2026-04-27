@@ -23,6 +23,13 @@ import api_keys
 
 
 WHITELIST_PATH = os.path.join("shortform_projects", "_whitelist.json")
+FOUNDERS_PATH = os.path.join("shortform_projects", "_founders.json")
+
+# 첫 사용자가 자동으로 founder로 claim 가능 (env로 비활성화 가능)
+ALLOW_FIRST_USER_CLAIM = True
+
+# 본 프로젝트 운영자 — secrets/env 미설정 시 폴백 (UI에서 변경 가능)
+DEFAULT_FOUNDER = "dahee44190299@gmail.com"
 
 
 def _ensure_dir():
@@ -45,17 +52,115 @@ def _save(data: dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def get_founder_ids() -> set:
-    """secrets/env에서 founder user_id 목록 가져오기.
+def _load_founders_file() -> dict:
+    """founders 파일 로드. 없으면 빈 dict."""
+    if not os.path.exists(FOUNDERS_PATH):
+        return {"founders": {}}
+    try:
+        with open(FOUNDERS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"founders": {}}
 
-    설정 위치:
-      .streamlit/secrets.toml: FOUNDER_USER_IDS = "you@email.com,partner@email.com"
-      또는 환경변수: FOUNDER_USER_IDS=you@email.com,partner@email.com
+
+def _save_founders_file(data: dict):
+    _ensure_dir()
+    Path(os.path.dirname(FOUNDERS_PATH)).mkdir(parents=True, exist_ok=True)
+    with open(FOUNDERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def get_founder_ids() -> set:
+    """founder user_id 목록 통합 — 3개 소스에서 합집합.
+
+    우선순위:
+      1. UI에서 등록한 founders (_founders.json) ← 동적 추가 가능
+      2. secrets.toml의 FOUNDER_USER_IDS
+      3. 환경변수 FOUNDER_USER_IDS
+      4. 폴백: DEFAULT_FOUNDER
     """
+    ids = set()
+    # 1. 파일 (UI 추가)
+    file_data = _load_founders_file()
+    ids.update(file_data.get("founders", {}).keys())
+    # 2-3. secrets/env
     raw = api_keys.get_api_key("FOUNDER_USER_IDS") or os.getenv("FOUNDER_USER_IDS", "")
-    if not raw:
-        return set()
-    return {x.strip() for x in raw.split(",") if x.strip()}
+    if raw:
+        ids.update(x.strip() for x in raw.split(",") if x.strip())
+    # 4. 폴백 (운영자)
+    if not ids and DEFAULT_FOUNDER:
+        ids.add(DEFAULT_FOUNDER)
+    return ids
+
+
+def add_founder(user_id: str, added_by: str = "system",
+                 note: str = "") -> dict:
+    """UI/CLI에서 founder 추가. 기존 founder만 호출 가능 (체크는 호출자에게).
+
+    Returns: {"ok": bool, "reason": str}
+    """
+    if not user_id:
+        return {"ok": False, "reason": "user_id가 비어있음"}
+    data = _load_founders_file()
+    if user_id in data.get("founders", {}):
+        return {"ok": False, "reason": "이미 등록된 founder"}
+    data.setdefault("founders", {})[user_id] = {
+        "added_at": datetime.now(timezone.utc).isoformat(),
+        "added_by": added_by or "system",
+        "note": note or "",
+    }
+    _save_founders_file(data)
+    return {"ok": True, "reason": "founder 등록 완료"}
+
+
+def remove_founder(user_id: str) -> bool:
+    """founder 삭제. 마지막 founder는 삭제 불가 (시스템 잠금 방지)."""
+    data = _load_founders_file()
+    founders = data.get("founders", {})
+    if user_id not in founders:
+        return False
+    if len(founders) <= 1:
+        return False  # 마지막 founder 보호
+    del founders[user_id]
+    _save_founders_file(data)
+    return True
+
+
+def claim_first_founder(user_id: str) -> dict:
+    """첫 사용자 자동 founder 등록.
+
+    조건:
+      - ALLOW_FIRST_USER_CLAIM = True
+      - 아직 file에 founder 없음 (env/secrets 무관)
+      - user_id 비어있지 않음
+
+    Returns: {"ok": bool, "reason": str}
+    """
+    if not ALLOW_FIRST_USER_CLAIM:
+        return {"ok": False, "reason": "first user claim 비활성화"}
+    if not user_id:
+        return {"ok": False, "reason": "user_id 비어있음"}
+    file_data = _load_founders_file()
+    if file_data.get("founders"):
+        return {"ok": False, "reason": "이미 founder 존재"}
+    return add_founder(user_id, added_by="first_user_claim",
+                       note="첫 사용자 자동 등록")
+
+
+def list_founders() -> list:
+    """모든 founder 정보 (UI 표시용)."""
+    data = _load_founders_file()
+    out = []
+    for uid, info in data.get("founders", {}).items():
+        out.append({"user_id": uid, **info, "source": "file"})
+    # secrets/env 추가
+    raw = api_keys.get_api_key("FOUNDER_USER_IDS") or os.getenv("FOUNDER_USER_IDS", "")
+    if raw:
+        for uid in raw.split(","):
+            uid = uid.strip()
+            if uid and uid not in {f["user_id"] for f in out}:
+                out.append({"user_id": uid, "source": "secrets/env"})
+    return out
 
 
 def is_founder(user_id: str) -> bool:
