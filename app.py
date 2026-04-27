@@ -13,6 +13,8 @@ import api_keys
 import llm
 import stock_video
 import constants
+import use_cases
+import script_judge
 from constants import (
     TEMPLATES, CATEGORY_HASHTAGS, COMMON_HASHTAGS,
     BGM_CATEGORY_KEYWORDS, PEXELS_CATEGORY_KEYWORDS,
@@ -263,6 +265,7 @@ defaults = {
     "clips":[], "clip_order":[], "script":"", "output_path":None,
     "tts_done":False, "subtitle_done":False, "sample_subs":[],
     "script_history":[], "subtitle_history":[], "search_results":[],
+    "active_use_case": "coupang_affiliate",
     "coupang_product":"", "coupang_category":"", "coupang_titles":[],
     "coupang_script":"", "coupang_hashtags":"", "coupang_desc":"",
     "product_images":[], "uploaded_images":[], "_prod_videos":[], "_yt_results":[], "_ai_trend_result":"",
@@ -336,12 +339,26 @@ def render_project_select():
     # 새 프로젝트 생성
     with st.expander("➕ 새 프로젝트 만들기", expanded=not bool(project_store.list_projects())):
         _np_name = st.text_input("프로젝트 이름", placeholder="예: 배수구 냄새 제거기", key="_new_prj_name")
-        _np_product = st.text_input("제품명 (선택)", placeholder="예: 만능 배수구 클리너", key="_new_prj_product")
+
+        # ── 🎯 Use Case 선택 (Phase 3 TAM 확장) ──
+        _uc_options = use_cases.list_use_cases()
+        _uc_labels = [f"{label} — {desc}" for _, label, desc in _uc_options]
+        _uc_idx = st.radio(
+            "어떤 영상을 만드시나요?",
+            range(len(_uc_options)),
+            format_func=lambda i: _uc_labels[i],
+            key="_new_prj_use_case_idx",
+            help="용도에 따라 Hook 패턴, 영상 구조, 성과 지표가 달라집니다.",
+        )
+        _np_use_case = _uc_options[_uc_idx][0]
+
+        _np_product = st.text_input("제품/주제명 (선택)", placeholder="예: 만능 배수구 클리너 / 강남 카페 투어", key="_new_prj_product")
         _np_cat = st.selectbox("카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "기타"], key="_new_prj_cat")
         if st.button("✅ 프로젝트 생성", key="btn_create_prj", type="primary"):
             if _np_name.strip():
                 pid = project_store.create_project(_np_name.strip(), product_name=_np_product, category=_np_cat)
                 st.session_state.active_project_id = pid
+                st.session_state.active_use_case = _np_use_case
                 st.session_state.app_phase = "template_select"
                 if _np_product:
                     st.session_state.coupang_product = _np_product
@@ -3198,10 +3215,17 @@ def render_step3():
 
                 _inferred_cat = category_templates.infer_category(pname, pcat)
                 _cat_hint = category_templates.format_category_hint(_inferred_cat)
+                _active_uc = st.session_state.get("active_use_case", "coupang_affiliate")
+                _uc_hint = use_cases.format_use_case_hint(_active_uc)
                 st.session_state["_last_inferred_category"] = _inferred_cat
-                result = call_claude(
-                    "쿠팡 파트너스 숏폼 대본 전문 작가. 대본만 출력. 다른 설명 없이 대본 텍스트만.",
-                    f"""제품: {pname}
+
+                # script_judge 자동 재생성 루프 (Phase 3 품질 #1)
+                def _gen_script(improvement_hint: str = "") -> str:
+                    extra = (f"\n\n[직전 시도 개선 사항 — 반드시 반영]\n{improvement_hint}\n"
+                             if improvement_hint else "")
+                    return call_claude(
+                        f"숏폼 대본 전문 작가 ({_active_uc}). 대본만 출력. 다른 설명 없이 대본 텍스트만.",
+                        f"""제품/주제: {pname}
 카테고리: {pcat}
 콘텐츠 목적: {cmode}
 스타일 가이드: {mode_guide.get(cmode, '')}
@@ -3210,27 +3234,38 @@ def render_step3():
 목표 길이: {_len_range} ({_len_sentences})
 {_tpl_tone}
 
+{_uc_hint}
 {_cat_hint}
-위 카테고리 가이드를 우선 반영해서 {_len_range} 분량 숏폼 광고 대본을 작성해줘.
-
-[Hook — 첫 3초] 시청자가 스크롤을 멈추게 만드는 충격적/궁금한 첫 문장. 질문형, 놀람형, 손해회피형 중 하나.
-[문제 제시 — 5초] 타겟 고객의 일상 불편함/고민을 공감하며 제시. '혹시 ~한 적 있으세요?' 패턴.
-[해결책 — 10초] 이 제품이 왜 해결책인지 핵심 3가지 포인트. '{_script_emphasis}' 관점에서 설명.
-[증거 — 5초] 리뷰 수, 평점, 판매량, 실사용 후기 등 신뢰 요소. 구체적 숫자 활용.
-[CTA — 3초] '링크 클릭해서 확인해보세요' 류의 행동 유도. 긴급성 포함.
+위 가이드를 우선 반영해서 {_len_range} 분량 숏폼 대본을 작성해줘.
 
 필수 조건:
 - '{_script_tone}' 말투로 작성
 - 한 문장 15자 이내 (짧고 리듬감 있게)
-- 구어체, 감정적 표현
-- 각 섹션 앞에 [Hook], [문제], [해결책], [증거], [CTA] 태그 표시
-- {_len_sentences} 분량""",
-                    prompt_type="script_main",
+- 마크다운 (#, **) 금지, 편집 메타정보 (촬영팁/효과음) 금지
+- 자연스러운 한 편의 대본만 출력
+- {_len_sentences} 분량{extra}""",
+                        prompt_type="script_main",
+                    ) or ""
+
+                _loop = script_judge.generate_with_quality_loop(
+                    _gen_script, product=pname, category=_inferred_cat,
+                    use_case=_active_uc, min_score=80, max_attempts=3,
                 )
+                result = _loop["script"]
+
                 if result:
                     st.session_state.coupang_script = result
                     _prof = category_templates.get_template(_inferred_cat)
-                    st.caption(f"🎯 카테고리 템플릿 자동 적용: **{_prof['label']}** — {_prof['hook_pattern']}")
+                    _judge = _loop.get("judge", {})
+                    _badge = "✅" if _loop["passed"] else "⚠️"
+                    st.caption(
+                        f"🎯 적용: **{use_cases.get_use_case(_active_uc)['label']}** · "
+                        f"카테고리 **{_prof['label']}** · "
+                        f"{_badge} 품질 점수 **{_judge.get('total', 0)}/100** "
+                        f"({_loop['attempts']}회 시도)"
+                    )
+                    if _judge.get("improvement"):
+                        st.caption(f"💡 개선 여지: {_judge['improvement']}")
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
 

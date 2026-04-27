@@ -237,17 +237,30 @@ def list_tracking_records(project_id):
 
 
 def update_tracking_metrics(project_id, video_id, manual_clicks=None,
-                             manual_revenue_krw=None, uploaded_to=None):
-    """사용자가 파트너스 대시보드 보고 수동 입력하는 매출/클릭 갱신."""
+                             manual_revenue_krw=None,
+                             manual_views=None, manual_likes=None,
+                             manual_subscribers=None, manual_signups=None,
+                             uploaded_to=None):
+    """사용자가 대시보드 보고 수동 입력하는 성과 지표 갱신.
+
+    Phase 3 일반화: revenue 외 views/likes/subscribers/signups 추가.
+    """
     data = _read_project_file(project_id)
     if not data:
         return False
     for r in data.get("tracking", []):
         if r.get("video_id") == video_id:
-            if manual_clicks is not None:
-                r["manual_clicks"] = int(manual_clicks)
-            if manual_revenue_krw is not None:
-                r["manual_revenue_krw"] = int(manual_revenue_krw)
+            field_map = [
+                ("manual_clicks", manual_clicks),
+                ("manual_revenue_krw", manual_revenue_krw),
+                ("manual_views", manual_views),
+                ("manual_likes", manual_likes),
+                ("manual_subscribers", manual_subscribers),
+                ("manual_signups", manual_signups),
+            ]
+            for col, val in field_map:
+                if val is not None:
+                    r[col] = int(val)
             if uploaded_to is not None:
                 r["uploaded_to"] = list(uploaded_to)
             _write_project_file(project_id, data)
