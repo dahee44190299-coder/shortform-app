@@ -1,0 +1,66 @@
+name: weekly-marketing
+
+# 매주 일요일 한국시간 오전 9시 (UTC 일 00:00)
+# 케이스 스터디 + 소셜 포스트 + 랜딩 stats 자동 생성 → PR 생성
+
+on:
+  schedule:
+    - cron: "0 0 * * 0"  # 일요일 UTC 00:00
+  workflow_dispatch:      # 수동 실행도 가능
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install minimal deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Generate marketing artifacts
+        # marketing_auto.py 실행 — project_store에 데이터 있으면 자동 발행
+        # 데이터 없으면 빈 결과 (실패 X)
+        run: |
+          python -c "
+          import marketing_auto
+          stats = marketing_auto.aggregate_sales_stats(days=7)
+          print(f'7일 통계: 영상 {stats[\"total_videos\"]}, 매출 {stats[\"total_revenue_krw\"]:,}원')
+          cases = marketing_auto.export_case_studies(min_revenue=1)
+          print(f'케이스 스터디 {len(cases)}건')
+          marketing_auto.export_landing_stats(days=7)
+          marketing_auto.export_social_post(days=7)
+          print('완료')
+          "
+
+      - name: Create Pull Request if changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "marketing: 주간 자동 발행 (케이스 스터디 + 소셜 포스트)"
+          title: "🤖 marketing: 주간 자동 발행"
+          body: |
+            매주 일요일 자동 실행되는 마케팅 발행 PR입니다.
+
+            - `marketing/case_studies/*.md` — 매출 발생한 영상 케이스 스터디
+            - `marketing/social_posts/*.txt` — X/스레드용 짧은 포스트
+            - `marketing/landing_stats.json` — 랜딩 페이지 dynamic stats
+
+            ## 검토 후 머지하면:
+            1. 정적 사이트(Vercel)가 자동 deploy → SEO 인덱싱
+            2. 소셜 포스트는 텍스트 그대로 X에 붙여넣어 발행
+
+            **수정 후 머지 가능** — 검토 없이 자동 머지 X (브랜드 보호).
+          branch: marketing/auto-weekly
+          delete-branch: true
+          add-paths: marketing/
