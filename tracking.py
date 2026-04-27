@@ -10,8 +10,6 @@ Why 해자:
 영상마다 unique subId 부착 → 어떤 영상이 매출 냈는지 추적 가능.
 다른 도구(Mirr/CapCut/Invideo)는 영상만 만들고 끝. 우리는 매출까지 본다.
 """
-import os
-import time
 import hmac
 import hashlib
 import json
@@ -104,13 +102,21 @@ def manual_subid_instructions(sub_id: str) -> str:
     )
 
 
-def make_tracking_record(video_id: str, project_id: str, coupang_url: str,
+def make_tracking_record(video_id: str, project_id: str, coupang_url: str = "",
                           deeplink_result: dict | None = None,
-                          template: str = "", title: str = "") -> dict:
-    """추적 레코드 1건. project_store에 저장될 dict."""
+                          template: str = "", title: str = "",
+                          use_case: str = "coupang_affiliate") -> dict:
+    """추적 레코드 1건. project_store에 저장될 dict.
+
+    Phase 3 일반화 (2026-04-27):
+      - 매출 외 성과 지표 추가 (views/likes/subscribers_gained 등)
+      - use_case 필드로 어떤 종류의 영상인지 표시
+      - 비-affiliate use case (vlog 등)는 sub_id/shorten_url 비워둬도 됨
+    """
     return {
         "video_id": video_id,
         "project_id": project_id,
+        "use_case": use_case,
         "sub_id": (deeplink_result or {}).get("subId", ""),
         "shorten_url": (deeplink_result or {}).get("shortenUrl", ""),
         "landing_url": (deeplink_result or {}).get("landingUrl", ""),
@@ -118,8 +124,32 @@ def make_tracking_record(video_id: str, project_id: str, coupang_url: str,
         "template": template,
         "title": title,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        # 사용자가 나중에 파트너스 대시보드 보고 수동 입력하는 필드:
+        # 성과 지표 — use case별로 사용자가 채울 필드:
         "manual_clicks": 0,
-        "manual_revenue_krw": 0,
-        "uploaded_to": [],  # ["youtube", "tiktok", ...]
+        "manual_revenue_krw": 0,        # affiliate
+        "manual_views": 0,              # youtube_review, personal_vlog
+        "manual_likes": 0,              # personal_vlog
+        "manual_subscribers": 0,        # youtube_review
+        "manual_signups": 0,            # general_affiliate
+        "uploaded_to": [],              # ["youtube", "tiktok", ...]
     }
+
+
+def primary_metric_value(record: dict) -> int:
+    """레코드에서 use case별 주요 성과 지표 값 추출."""
+    try:
+        import use_cases
+        uc = use_cases.get_use_case(record.get("use_case", "coupang_affiliate"))
+        pm = uc.get("primary_metric", "revenue_krw")
+    except Exception:
+        pm = "revenue_krw"
+    field_map = {
+        "revenue_krw": "manual_revenue_krw",
+        "views": "manual_views",
+        "likes": "manual_likes",
+        "clicks": "manual_clicks",
+        "signups": "manual_signups",
+        "subscribers_gained": "manual_subscribers",
+    }
+    field = field_map.get(pm, "manual_revenue_krw")
+    return int(record.get(field, 0) or 0)

@@ -64,6 +64,7 @@ JUDGE_USER_TEMPLATE = """다음 대본을 평가하세요.
 
 
 def judge_script(script: str, product: str = "", category: str = "general",
+                 use_case: str = "coupang_affiliate",
                  min_score: int = DEFAULT_MIN_SCORE) -> dict:
     """대본 1건을 LLM judge로 평가.
 
@@ -99,14 +100,26 @@ def judge_script(script: str, product: str = "", category: str = "general",
         parsed = _parse_judge_json(text)
         if not parsed:
             return _fallback_judge(script, min_score)
-        total = int(parsed.get("total", 0))
+        scores = {k: parsed.get(k, {}) for k in
+                  ("hook_impact", "category_fit", "length_fit",
+                   "cta_clarity", "conversion_power")}
+        # use case 가중치 적용 — 단순 합 vs 가중 평균 둘 다 제공
+        try:
+            import use_cases as _uc
+            total_weighted = _uc.weighted_judge_score(scores, use_case)
+        except Exception:
+            total_weighted = float(parsed.get("total", 0))
+        total_simple = int(parsed.get("total", 0))
+        # 채택 점수 = 가중 평균 (use case별 우선순위 반영)
+        total = int(round(total_weighted))
         return {
             "ok": True,
-            "scores": {k: parsed.get(k, {}) for k in
-                       ("hook_impact", "category_fit", "length_fit",
-                        "cta_clarity", "conversion_power")},
+            "use_case": use_case,
+            "scores": scores,
             "total": total,
-            "verdict": parsed.get("verdict", "PASS" if total >= min_score else "FAIL"),
+            "total_simple": total_simple,
+            "total_weighted": total_weighted,
+            "verdict": "PASS" if total >= min_score else "FAIL",
             "improvement": parsed.get("improvement", ""),
             "passed": total >= min_score,
         }
@@ -159,6 +172,7 @@ def _fallback_judge(script: str, min_score: int) -> dict:
 
 
 def generate_with_quality_loop(generate_fn, product: str, category: str,
+                                 use_case: str = "coupang_affiliate",
                                  min_score: int = DEFAULT_MIN_SCORE,
                                  max_attempts: int = MAX_REGEN_ATTEMPTS) -> dict:
     """대본 자동 재생성 루프 — 점수 < min_score면 재시도.
@@ -195,7 +209,8 @@ def generate_with_quality_loop(generate_fn, product: str, category: str,
         if not script:
             history.append({"attempt": attempt, "score": 0, "improvement": "생성 실패"})
             continue
-        result = judge_script(script, product=product, category=category, min_score=min_score)
+        result = judge_script(script, product=product, category=category,
+                                use_case=use_case, min_score=min_score)
         history.append({
             "attempt": attempt,
             "score": result["total"],

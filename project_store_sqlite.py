@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS videos (
 CREATE TABLE IF NOT EXISTS tracking_records (
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     video_id TEXT NOT NULL,
+    use_case TEXT NOT NULL DEFAULT 'coupang_affiliate',
     sub_id TEXT NOT NULL DEFAULT '',
     shorten_url TEXT NOT NULL DEFAULT '',
     landing_url TEXT NOT NULL DEFAULT '',
@@ -69,6 +70,10 @@ CREATE TABLE IF NOT EXISTS tracking_records (
     title TEXT NOT NULL DEFAULT '',
     manual_clicks INTEGER NOT NULL DEFAULT 0,
     manual_revenue_krw INTEGER NOT NULL DEFAULT 0,
+    manual_views INTEGER NOT NULL DEFAULT 0,
+    manual_likes INTEGER NOT NULL DEFAULT 0,
+    manual_subscribers INTEGER NOT NULL DEFAULT 0,
+    manual_signups INTEGER NOT NULL DEFAULT 0,
     uploaded_to TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     PRIMARY KEY (project_id, video_id)
@@ -244,13 +249,16 @@ def add_tracking_record(project_id: str, record: dict) -> bool:
             return False
         c.execute("""
             INSERT OR REPLACE INTO tracking_records (
-                project_id, video_id, sub_id, shorten_url, landing_url,
+                project_id, video_id, use_case, sub_id, shorten_url, landing_url,
                 original_url, template, title,
-                manual_clicks, manual_revenue_krw, uploaded_to, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                manual_clicks, manual_revenue_krw, manual_views,
+                manual_likes, manual_subscribers, manual_signups,
+                uploaded_to, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             project_id,
             record.get("video_id", ""),
+            record.get("use_case", "coupang_affiliate"),
             record.get("sub_id", ""),
             record.get("shorten_url", ""),
             record.get("landing_url", ""),
@@ -259,6 +267,10 @@ def add_tracking_record(project_id: str, record: dict) -> bool:
             record.get("title", ""),
             int(record.get("manual_clicks", 0) or 0),
             int(record.get("manual_revenue_krw", 0) or 0),
+            int(record.get("manual_views", 0) or 0),
+            int(record.get("manual_likes", 0) or 0),
+            int(record.get("manual_subscribers", 0) or 0),
+            int(record.get("manual_signups", 0) or 0),
             json.dumps(record.get("uploaded_to", []), ensure_ascii=False),
             record.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
         ))
@@ -280,15 +292,23 @@ def list_tracking_records(project_id: str) -> list:
 
 def update_tracking_metrics(project_id: str, video_id: str,
                              manual_clicks=None, manual_revenue_krw=None,
+                             manual_views=None, manual_likes=None,
+                             manual_subscribers=None, manual_signups=None,
                              uploaded_to=None) -> bool:
     _init_schema()
     sets, values = [], []
-    if manual_clicks is not None:
-        sets.append("manual_clicks = ?")
-        values.append(int(manual_clicks))
-    if manual_revenue_krw is not None:
-        sets.append("manual_revenue_krw = ?")
-        values.append(int(manual_revenue_krw))
+    field_map = [
+        ("manual_clicks", manual_clicks),
+        ("manual_revenue_krw", manual_revenue_krw),
+        ("manual_views", manual_views),
+        ("manual_likes", manual_likes),
+        ("manual_subscribers", manual_subscribers),
+        ("manual_signups", manual_signups),
+    ]
+    for col, val in field_map:
+        if val is not None:
+            sets.append(f"{col} = ?")
+            values.append(int(val))
     if uploaded_to is not None:
         sets.append("uploaded_to = ?")
         values.append(json.dumps(list(uploaded_to), ensure_ascii=False))
