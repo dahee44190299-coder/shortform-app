@@ -1610,6 +1610,54 @@ def scrape_og_tags(url):
         pass
     return result
 
+def parse_coupang_share_text(text: str) -> dict:
+    """쿠팡 앱 '공유' 텍스트에서 상품명 + URL 자동 분리.
+
+    예상 입력 (쿠팡 앱 공유):
+        "[쿠팡] 닥터자르트 시카페어 토너 200ml\nhttps://link.coupang.com/a/exnTX4"
+        또는
+        "닥터자르트 시카페어 토너 200ml https://link.coupang.com/a/abc"
+        또는 단순 URL만
+
+    Returns:
+        {"name": str, "url": str, "success": bool}
+    """
+    if not text:
+        return {"name": "", "url": "", "success": False}
+
+    text = text.strip()
+
+    # URL 추출 (link.coupang.com 또는 coupang.com)
+    url_match = re.search(
+        r'https?://(?:link\.coupang\.com/a/[A-Za-z0-9]+'
+        r'|(?:www|m)\.coupang\.com/[^\s]+)',
+        text,
+    )
+    extracted_url = url_match.group(0) if url_match else ""
+
+    # 상품명 = URL을 제외한 나머지 (특수 문자/접두사 제거)
+    name_part = text
+    if extracted_url:
+        name_part = name_part.replace(extracted_url, "").strip()
+
+    # 흔한 접두사 제거
+    for prefix in ("[쿠팡]", "쿠팡:", "Coupang:", "쿠팡-"):
+        if name_part.startswith(prefix):
+            name_part = name_part[len(prefix):].strip()
+
+    # 줄바꿈/탭 정리
+    name_part = re.sub(r'\s+', ' ', name_part).strip()
+
+    # 너무 짧거나 길면 무효
+    valid_name = len(name_part) >= 3 and len(name_part) <= 200
+
+    return {
+        "name": name_part if valid_name else "",
+        "url": extracted_url,
+        "success": bool(extracted_url or valid_name),
+    }
+
+
 def extract_coupang_info(url):
     """쿠팡 URL에서 제품명 추출 시도.
 
@@ -2277,11 +2325,39 @@ def render_step1():
         unsafe_allow_html=True,
     )
 
-    # ── 쿠팡 URL + OG 자동 추출 (UI 정리: 단일 카드) ──
+    # ── 쿠팡 앱 공유 텍스트 자동 파싱 (가장 빠른 입력 방법) ──
+    st.markdown("##### 📱 쿠팡 앱 '공유' 텍스트 붙여넣기 <span style='font-size:.7rem;color:#10B981;font-weight:600;'>가장 빠름</span>",
+                unsafe_allow_html=True)
+    _share_text = st.text_area(
+        "쿠팡 공유 텍스트",
+        placeholder="쿠팡 앱 → 상품 → 공유 → 카톡/메모 등으로 보낸 텍스트 그대로 붙여넣기\n\n예시:\n[쿠팡] 닥터자르트 시카페어 토너 200ml\nhttps://link.coupang.com/a/exnTX4",
+        height=80,
+        label_visibility="collapsed",
+        key="_share_text_input",
+        help="쿠팡 앱에서 상품 페이지 → 우측 상단 공유 버튼 → 텍스트 복사 → 여기에 붙여넣기. 상품명 + URL이 자동 분리됩니다.",
+    )
+    _btn_parse = st.button("✨ 자동 분리하기", key="btn_parse_share",
+                            use_container_width=False, type="primary")
+
+    if _btn_parse and _share_text:
+        _parsed = parse_coupang_share_text(_share_text)
+        if _parsed["name"]:
+            st.session_state.coupang_product = _parsed["name"]
+        if _parsed["url"]:
+            st.session_state["_parsed_url"] = _parsed["url"]
+        if _parsed["success"]:
+            st.success(f"✅ 자동 분리 완료: **{_parsed['name'] or '(상품명 없음)'}**"
+                        f"{f' · URL 인식됨' if _parsed['url'] else ''}")
+        else:
+            st.warning("⚠️ 인식 실패 — 아래 입력란에 직접 입력해주세요.")
+
+    st.markdown("---")
     st.markdown("##### 🛒 쿠팡 상품 URL <span style='font-size:.7rem;color:#9CA3AF;font-weight:400;'>선택 · 추적 링크용</span>",
                 unsafe_allow_html=True)
+    _default_url = st.session_state.pop("_parsed_url", "") if st.session_state.get("_parsed_url") else ""
     coupang_url = st.text_input(
         "쿠팡 상품 URL",
+        value=_default_url,
         placeholder="https://link.coupang.com/a/XXXXX  (단축 URL도 OK)",
         label_visibility="collapsed",
         help="쿠팡 파트너스 API 없어도 동작. URL은 STEP 4 추적 링크에만 쓰임."
