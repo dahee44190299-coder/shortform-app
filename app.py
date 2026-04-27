@@ -461,7 +461,7 @@ def render_project_select():
         _np_use_case = _uc_options[_uc_idx][0]
 
         _np_product = st.text_input("제품/주제명 (선택)", placeholder="예: 만능 배수구 클리너 / 강남 카페 투어", key="_new_prj_product")
-        _np_cat = st.selectbox("카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "기타"], key="_new_prj_cat")
+        _np_cat = st.selectbox("카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "반려동물", "기타"], key="_new_prj_cat")
         if st.button("✅ 프로젝트 생성", key="btn_create_prj", type="primary"):
             if _np_name.strip():
                 pid = project_store.create_project(_np_name.strip(), product_name=_np_product, category=_np_cat)
@@ -1613,14 +1613,46 @@ def scrape_og_tags(url):
 def extract_coupang_info(url):
     """쿠팡 URL에서 제품명 추출 시도.
 
-    중요: 쿠팡은 서버 요청을 강력히 차단(HTTP 403)하므로 자동 추출 성공률 낮음.
-    여러 헤더 + 모바일 사이트 폴백 시도. 모두 실패 시 productId만 추출하여 placeholder.
+    지원:
+    - link.coupang.com/a/XXX (단축 URL) → 302 Location에서 productId 추출
+    - www.coupang.com/vp/products/XXX (긴 URL) → 일반 추출 시도
 
-    Returns: {"name": str, "success": bool, "error": str (실패 시),
-              "product_id": str (URL에서 추출된 ID)}
+    중요: 쿠팡은 상품 상세 페이지를 HTTP 403으로 차단함.
+    단축 URL은 redirect까지는 OK이므로 productId만 확실히 추출됨.
+
+    Returns: {"name": str, "success": bool, "error": str, "product_id": str}
     """
-    # URL에서 productId 추출 (실패 시 placeholder로 사용)
     product_id = ""
+
+    # ── 단축 URL (link.coupang.com) 처리 ──
+    if "link.coupang.com" in url:
+        try:
+            short_headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Accept-Language": "ko-KR,ko;q=0.9",
+            }
+            r = requests.get(url, headers=short_headers, timeout=10, allow_redirects=False)
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = r.headers.get("Location", "")
+                # Location URL에서 productId 추출
+                pid_m = re.search(r'products/(\d+)', location)
+                if pid_m:
+                    product_id = pid_m.group(1)
+                    return {
+                        "name": f"쿠팡 상품 #{product_id}",
+                        "success": False,  # 상품명은 못 가져옴 (수동 입력 필요)
+                        "product_id": product_id,
+                        "error": ("단축 URL에서 상품 ID는 추출했지만 상품명은 쿠팡이 차단합니다. "
+                                  "쿠팡 앱/사이트에서 상품명을 복사해 입력해주세요."),
+                    }
+        except Exception as e:
+            return {
+                "name": "", "success": False, "product_id": "",
+                "error": f"단축 URL 처리 실패: {type(e).__name__}",
+            }
+
+    # ── 일반 긴 URL의 productId 추출 ──
     pid_match = re.search(r'products/(\d+)', url)
     if pid_match:
         product_id = pid_match.group(1)
@@ -2238,8 +2270,20 @@ def render_step1():
     st.markdown('<div class="ux-card">', unsafe_allow_html=True)
 
     # ── 쿠팡 URL + OG 자동 추출 ──
-    st.markdown("#### 🛒 쿠팡 상품 URL")
-    coupang_url = st.text_input("쿠팡 상품 URL", placeholder="https://www.coupang.com/vp/products/...", label_visibility="collapsed")
+    st.markdown("#### 🛒 쿠팡 상품 URL (선택)")
+    st.markdown(
+        '<div class="info-box">'
+        '💡 <strong>쿠팡 파트너스 API 없어도 OK</strong> — 상품명만 직접 입력하면 모든 기능 작동.<br>'
+        'URL은 추적 링크(STEP 4)용이며, 단축 URL(<code>link.coupang.com/a/XXX</code>)도 지원.<br>'
+        '쿠팡 차단 정책으로 자동 추출은 안 되지만, <strong>본인이 만든 추적 링크 그대로 사용</strong>하시면 됩니다.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    coupang_url = st.text_input(
+        "쿠팡 상품 URL",
+        placeholder="https://link.coupang.com/a/XXXXX  또는  https://www.coupang.com/vp/products/...",
+        label_visibility="collapsed"
+    )
     st.caption("쿠팡 파트너스가 처음이신가요? [가입 안내 보기](https://partners.coupang.com/)")
 
     col_extract, col_status = st.columns([1, 3])
@@ -2248,20 +2292,28 @@ def render_step1():
 
     if do_extract and coupang_url:
         with st.spinner("OG 태그 + 상품 정보 추출 중... (5-10초)"):
-            # OG 태그 스크래핑
-            og = scrape_og_tags(coupang_url)
+            # OG 태그 스크래핑 (단축 URL이 아닌 경우만 의미 있음)
+            og = scrape_og_tags(coupang_url) if "link.coupang.com" not in coupang_url else {}
             st.session_state["og_tags"] = og
             # 제품명 추출 시도
             info = extract_coupang_info(coupang_url)
+
+            # "Deeplink Redirect" 같은 의미없는 OG 텍스트 필터
+            _bad_og = ("deeplink", "redirect", "쿠팡!", "coupang")
+            _og_clean = (og.get("og_title", "").strip()
+                          if og.get("og_title") else "")
+            _og_useless = (not _og_clean or
+                            any(b in _og_clean.lower() for b in _bad_og) or
+                            len(_og_clean) <= 5)
+
             if info["success"]:
                 st.session_state.coupang_product = info["name"]
-            elif og.get("og_title"):
-                cleaned = og["og_title"].replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
-                if cleaned and len(cleaned) > 2:
-                    st.session_state.coupang_product = cleaned
-                    info["success"] = True
+            elif _og_clean and not _og_useless:
+                cleaned = _og_clean.replace(" - 쿠팡!", "").replace(" | 쿠팡", "").strip()
+                st.session_state.coupang_product = cleaned
+                info["success"] = True
 
-            if info["success"] or og.get("success"):
+            if info["success"]:
                 st.success(f"✅ 추출 완료: {st.session_state.coupang_product}")
                 if og.get("og_image"):
                     st.image(og["og_image"], width=200, caption="OG 대표 이미지")
@@ -2269,7 +2321,7 @@ def render_step1():
                     st.caption(f"📝 {og['og_description'][:120]}")
             else:
                 # 쿠팡 봇 차단 — 명확한 안내 + productId placeholder 제공
-                st.error("⚠️ 쿠팡이 자동 추출을 차단했습니다 (봇 방지 정책)")
+                st.warning("⚠️ 쿠팡이 자동 추출을 차단했습니다 (봇 방지 정책으로 모든 도구 동일)")
                 _err_detail = info.get("error", "")
                 _pid = info.get("product_id", "")
                 with st.expander("자세히 보기"):
@@ -2304,7 +2356,7 @@ def render_step1():
         )
     with c2:
         st.session_state.coupang_category = st.selectbox(
-            "카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "기타"]
+            "카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "반려동물", "기타"]
         )
 
     s1c1, s1c2 = st.columns(2)
@@ -3400,7 +3452,11 @@ def render_step3():
                                "편의성": "사용 편리함, 시간 절약, 간편함 강조. before/after 비교.",
                                "희소성": "한정 수량, 품절 임박, '지금 아니면 못 삼' 분위기 조성. 긴급성 강조."}
 
-                _inferred_cat = category_templates.infer_category(pname, pcat)
+                # 우선순위: 사용자 선택 카테고리 (UI 한국어 → 내부 ID 매핑) → URL 추론
+                _ui_cat = pcat or st.session_state.get("coupang_category", "")
+                _mapped_cat = category_templates.map_ui_category(_ui_cat) if _ui_cat else ""
+                _inferred_cat = _mapped_cat if _mapped_cat != "general" else \
+                                 category_templates.infer_category(pname, pcat)
                 _active_uc = st.session_state.get("active_use_case", "coupang_affiliate")
                 _personal_ctx = st.session_state.get("_personal_context", "")
                 st.session_state["_last_inferred_category"] = _inferred_cat
