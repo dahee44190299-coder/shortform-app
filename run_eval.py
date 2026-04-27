@@ -75,7 +75,7 @@ def eval_llm_quality(cases: list, sample: int = 5) -> dict:
     import eval_metrics
 
     client = anthropic.Anthropic(api_key=api_key)
-    model = "claude-sonnet-4-20250514"
+    model = "claude-sonnet-4-5"
     sampled = cases[:sample]
     results = []
     for c in sampled:

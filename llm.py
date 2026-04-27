@@ -20,7 +20,8 @@ import api_keys
 import eval_metrics
 
 
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+# claude-sonnet-4-20250514는 2026-06-15 EOL → claude-sonnet-4-5로 업그레이드
+CLAUDE_MODEL = "claude-sonnet-4-5"
 
 
 def call_claude(system_prompt: str, user_msg: str, max_tokens: int = 1500,
