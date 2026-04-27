@@ -15,6 +15,7 @@ import stock_video
 import constants
 import use_cases
 import script_judge
+import script_prompts
 import whitelist
 import admin_dashboard
 from constants import (
@@ -3362,6 +3363,18 @@ def render_step3():
         _len_map = {"15초 (초단편)": ("15초", "15~20초", "3~5문장"), "30초 (표준)": ("30초", "30~45초", "8~12문장"), "60초 (롱폼)": ("60초", "50~60초", "15~20문장")}
         _len_label, _len_range, _len_sentences = _len_map.get(_script_length, ("30초", "30~45초", "8~12문장"))
 
+        # ── 🌟 개인 사연 / 추가 컨텍스트 (대본 품질 폭발 핵심) ──
+        st.session_state["_personal_context"] = st.text_area(
+            "🌟 개인 사연·배경 (선택, 입력하면 대본 품질 ↑↑)",
+            value=st.session_state.get("_personal_context", ""),
+            placeholder="예: 화장품 알러지로 1년간 응급실 갔던 사람인데 이거 쓰고 처음 잠들었어 / "
+                        "자취 3년차인데 라면 박스로 사면 한 봉 700원 / 강아지 입맛 까다로운데 이건 흡입함",
+            height=70,
+            help="구체적 개인 사연을 1줄 입력하면 LLM이 그걸 살려서 대본 품질이 크게 올라갑니다. "
+                 "수치/시점/대상이 구체적일수록 좋아요.",
+            key="_personal_context_input",
+        )
+
         if st.button("✨ AI 스크립트 생성", key="gen_coupang_script", disabled=not has_key("ANTHROPIC_API_KEY")):
             with st.spinner("스크립트 생성 중..."):
                 cmode = st.session_state.content_mode
@@ -3387,60 +3400,76 @@ def render_step3():
                                "희소성": "한정 수량, 품절 임박, '지금 아니면 못 삼' 분위기 조성. 긴급성 강조."}
 
                 _inferred_cat = category_templates.infer_category(pname, pcat)
-                _cat_hint = category_templates.format_category_hint(_inferred_cat)
                 _active_uc = st.session_state.get("active_use_case", "coupang_affiliate")
-                _uc_hint = use_cases.format_use_case_hint(_active_uc)
+                _personal_ctx = st.session_state.get("_personal_context", "")
                 st.session_state["_last_inferred_category"] = _inferred_cat
 
-                # script_judge 자동 재생성 루프 (Phase 3 품질 #1)
+                # 새 마스터 프롬프트 (script_prompts.py) — 페르소나 + few-shot 예시
+                _sys_prompt, _user_base = script_prompts.build_master_prompt(
+                    use_case=_active_uc, category=_inferred_cat, product=pname,
+                    tone=_script_tone, target_chars=200,
+                    personal_context=_personal_ctx,
+                )
+
                 def _gen_script(improvement_hint: str = "") -> str:
-                    extra = (f"\n\n[직전 시도 개선 사항 — 반드시 반영]\n{improvement_hint}\n"
+                    extra = (f"\n\n[직전 시도 약점 — 반드시 개선]\n{improvement_hint}\n"
+                             "이번엔 더 구체적이고 친근하게."
                              if improvement_hint else "")
                     return call_claude(
-                        f"숏폼 대본 전문 작가 ({_active_uc}). 대본만 출력. 다른 설명 없이 대본 텍스트만.",
-                        f"""제품/주제: {pname}
-카테고리: {pcat}
-콘텐츠 목적: {cmode}
-스타일 가이드: {mode_guide.get(cmode, '')}
-말투: {_script_tone} — {_tone_guide.get(_script_tone, '')}
-강조 포인트: {_script_emphasis} — {_emph_guide.get(_script_emphasis, '')}
-목표 길이: {_len_range} ({_len_sentences})
-{_tpl_tone}
-
-{_uc_hint}
-{_cat_hint}
-위 가이드를 우선 반영해서 {_len_range} 분량 숏폼 대본을 작성해줘.
-
-필수 조건:
-- '{_script_tone}' 말투로 작성
-- 한 문장 15자 이내 (짧고 리듬감 있게)
-- 마크다운 (#, **) 금지, 편집 메타정보 (촬영팁/효과음) 금지
-- 자연스러운 한 편의 대본만 출력
-- {_len_sentences} 분량{extra}""",
-                        prompt_type="script_main",
+                        _sys_prompt,
+                        _user_base + extra,
+                        prompt_type="script_viral",
                     ) or ""
 
                 _loop = script_judge.generate_with_quality_loop(
                     _gen_script, product=pname, category=_inferred_cat,
-                    use_case=_active_uc, min_score=80, max_attempts=3,
+                    use_case=_active_uc, min_score=85, max_attempts=3,
                 )
                 result = _loop["script"]
 
                 if result:
                     st.session_state.coupang_script = result
-                    _prof = category_templates.get_template(_inferred_cat)
-                    _judge = _loop.get("judge", {})
-                    _badge = "✅" if _loop["passed"] else "⚠️"
-                    st.caption(
-                        f"🎯 적용: **{use_cases.get_use_case(_active_uc)['label']}** · "
-                        f"카테고리 **{_prof['label']}** · "
-                        f"{_badge} 품질 점수 **{_judge.get('total', 0)}/100** "
-                        f"({_loop['attempts']}회 시도)"
-                    )
-                    if _judge.get("improvement"):
-                        st.caption(f"💡 개선 여지: {_judge['improvement']}")
+                    st.session_state["_last_judge"] = _loop.get("judge", {})
+                    st.session_state["_last_attempts"] = _loop["attempts"]
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        # ── 점수 + 차원별 표시 + 다시 생성 버튼 ──
+        _judge = st.session_state.get("_last_judge", {})
+        if _judge:
+            _score = _judge.get("total", 0)
+            _badge = "🟢" if _score >= 85 else ("🟡" if _score >= 70 else "🔴")
+            _atts = st.session_state.get("_last_attempts", 1)
+            _sc1, _sc2 = st.columns([3, 1])
+            with _sc1:
+                st.markdown(f"### {_badge} 품질 점수 **{_score}/100** ({_atts}회 시도)")
+                if _judge.get("improvement"):
+                    st.info(f"💡 **개선 여지**: {_judge['improvement']}")
+            with _sc2:
+                if st.button("🔁 다시 생성", key="regen_script", type="primary",
+                              use_container_width=True):
+                    # 강제로 다시 생성 (직전 점수를 hint로 활용)
+                    st.session_state.pop("coupang_script", None)
+                    st.session_state.pop("_last_judge", None)
+                    st.rerun()
+            # 차원별 점수 펼치기
+            if _judge.get("scores"):
+                with st.expander("📊 차원별 평가 펼치기"):
+                    for k, v in _judge["scores"].items():
+                        if not v.get("score"):
+                            continue
+                        _label = {
+                            "hook_impact": "1️⃣ Hook 손가락 멈춤도",
+                            "category_fit": "2️⃣ 카테고리 적합성",
+                            "specificity": "3️⃣ 구체성 (수치/사례)",
+                            "anti_cliche": "4️⃣ ChatGPT 클리셰 회피",
+                            "conversion_power": "5️⃣ 구매 욕구 자극",
+                            "length_fit": "📏 길이 적합성",
+                            "cta_clarity": "🎯 CTA 명확성",
+                        }.get(k, k)
+                        _s = v.get("score", 0)
+                        _emoji = "🟢" if _s >= 16 else ("🟡" if _s >= 11 else "🔴")
+                        st.markdown(f"{_emoji} **{_label}**: {_s}/20 — {v.get('reason', '')[:120]}")
 
         if st.session_state.coupang_script:
             st.session_state.coupang_script = st.text_area(

@@ -33,7 +33,7 @@ JUDGE_SYSTEM = """당신은 쿠팡 파트너스 30초 쇼츠 대본을 평가하
 설명 없이 JSON만 출력. 마크다운 코드블록 금지."""
 
 
-JUDGE_USER_TEMPLATE = """다음 대본을 평가하세요.
+JUDGE_USER_TEMPLATE = """다음 대본을 엄격하게 평가하세요. 어설픈 대본은 가차없이 낮게.
 
 [상품] {product}
 [카테고리] {category}
@@ -42,24 +42,40 @@ JUDGE_USER_TEMPLATE = """다음 대본을 평가하세요.
 [대본 끝]
 
 평가 기준 (각 0-20점, 합계 0-100):
-1. hook_impact: 첫 1.5초가 시청자를 멈추게 하는가? 의문문/충격 단어/구체적 수치/공감 포인트 중 하나 이상 포함되고 25자 이내인가?
-2. category_fit: 카테고리({category}) 특성에 맞는 표현/구조인가?
-3. length_fit: 마크다운/메타정보 제외 순수 내레이션이 30초 음성 분량(150-220자)에 맞는가?
-4. cta_clarity: 시청자가 무엇을 해야 할지 구체적으로 명시했는가? (설명란/링크/클릭 등)
-5. conversion_power: 시청자가 실제로 구매하고 싶어질 만큼 욕구를 자극하는가? (가격/혜택/희소성/사회적증거)
 
-각 차원에 대해 0-20점 점수와 한 줄 사유.
+1. hook_impact (첫 1초 손가락 멈춤도):
+   - 18-20점: 충격적 사연/숫자/장면으로 시작 (예: "응급실 갔던 사람이야", "이 가격에 30봉?")
+   - 13-17점: 의문문/강한 단어 OK, 단 일반적 (예: "이거 진짜 좋아?")
+   - 0-12점: 평범한 시작 (예: "안녕하세요", "오늘은 ~를 소개")
 
-출력 형식 (JSON만):
+2. category_fit ({category} 카테고리 적합성):
+   - 18-20점: 카테고리 고유 언어 + 패턴 정확히 활용
+   - 0-12점: 일반 광고 카피, 카테고리 특성 무시
+
+3. specificity (**구체성** — 수치/이름/사례):
+   - 18-20점: 구체적 수치 2개+ (가격/스펙/시점/리뷰 수 등) AND 사람/상황 1개
+   - 13-17점: 수치 1개 OR 사람 1개
+   - 0-12점: 일반론만 ("좋아요", "효과 있어요" 류)
+
+4. anti_cliche (ChatGPT 안전 톤 회피):
+   - 18-20점: 친구 카톡처럼 자연스러움, 클리셰 0개
+   - 13-17점: 자연스럽지만 일부 클리셰 ("지금 바로", "확인하세요")
+   - 0-12점: 전형적 광고 카피, ChatGPT 냄새
+
+5. conversion_power (구매 욕구 자극):
+   - 18-20점: 사회적 증거 + 가격/희소성 + 시청자가 본인 상황에 대입 가능
+   - 0-12점: 욕구 자극 약함
+
+JSON만 출력 (마크다운 코드블록 금지):
 {{
   "hook_impact":      {{"score": 0-20, "reason": "..."}},
   "category_fit":     {{"score": 0-20, "reason": "..."}},
-  "length_fit":       {{"score": 0-20, "reason": "..."}},
-  "cta_clarity":      {{"score": 0-20, "reason": "..."}},
+  "specificity":      {{"score": 0-20, "reason": "..."}},
+  "anti_cliche":      {{"score": 0-20, "reason": "..."}},
   "conversion_power": {{"score": 0-20, "reason": "..."}},
   "total": 0-100,
   "verdict": "PASS" | "FAIL",
-  "improvement": "재생성 시 가장 우선 개선할 1가지"
+  "improvement": "재생성 시 가장 우선 개선할 1가지 (구체적으로)"
 }}"""
 
 
@@ -100,9 +116,15 @@ def judge_script(script: str, product: str = "", category: str = "general",
         parsed = _parse_judge_json(text)
         if not parsed:
             return _fallback_judge(script, min_score)
-        scores = {k: parsed.get(k, {}) for k in
-                  ("hook_impact", "category_fit", "length_fit",
-                   "cta_clarity", "conversion_power")}
+        # 신구 차원 모두 시도 (호환성)
+        new_dims = ("hook_impact", "category_fit", "specificity",
+                     "anti_cliche", "conversion_power")
+        old_dims = ("hook_impact", "category_fit", "length_fit",
+                     "cta_clarity", "conversion_power")
+        # 신차원 우선, 없으면 구차원
+        scores = {k: parsed.get(k, {}) for k in new_dims}
+        if not any(s.get("score") for s in scores.values()):
+            scores = {k: parsed.get(k, {}) for k in old_dims}
         # use case 가중치 적용 — 단순 합 vs 가중 평균 둘 다 제공
         try:
             import use_cases as _uc

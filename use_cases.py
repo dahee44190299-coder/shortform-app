@@ -30,12 +30,15 @@ USE_CASES = {
         "tracking_required": True,  # subId 자동 부착 필수
         "default_categories": ["digital", "beauty", "food", "household",
                                "fashion", "baby_kids", "pet"],
-        "judge_weights": {  # 5차원 점수 가중치 (합 1.0)
+        "judge_weights": {
             "hook_impact": 0.20,
-            "category_fit": 0.20,
+            "category_fit": 0.15,
+            "specificity": 0.20,  # 구체성 — 쿠팡은 가격/스펙이 결정
+            "anti_cliche": 0.20,
+            "conversion_power": 0.25,
+            # legacy 호환:
             "length_fit": 0.15,
             "cta_clarity": 0.20,
-            "conversion_power": 0.25,  # 쿠팡은 구매 전환력 가장 중요
         },
     },
     "general_affiliate": {
@@ -139,9 +142,18 @@ def weighted_judge_score(scores: dict, use_case_id: str) -> float:
                         for k in ("hook_impact", "category_fit", "length_fit",
                                   "cta_clarity", "conversion_power"))
         return float(total_pts)
+    # 점수가 있는 차원만 필터 + 가중치 정규화 (sum 1.0)
+    present_weights = {k: w for k, w in weights.items()
+                        if k in scores and scores[k].get("score")}
+    if not present_weights:
+        return 0.0
+    total_w = sum(present_weights.values())
+    if total_w == 0:
+        return 0.0
+    norm_weights = {k: w / total_w for k, w in present_weights.items()}
     # 가중치는 합이 1.0, 각 점수는 0-20이므로 *5 = 0-100 환산
     weighted = 0.0
-    for k, w in weights.items():
+    for k, w in norm_weights.items():
         s = int(scores.get(k, {}).get("score", 0))
         weighted += s * 5 * w
     return round(weighted, 1)
