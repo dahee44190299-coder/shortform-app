@@ -2244,15 +2244,21 @@ if st.session_state.app_phase == "pipeline":
 # ── 이전/다음 네비 버튼 헬퍼 ──────────────────────────────────
 def _render_nav_buttons():
     st.markdown("---")
+    _step_names = {1: "소스", 2: "편집", 3: "AI 대본", 4: "추적+DL"}
+    _curr = st.session_state.current_step
     nav_prev, _, nav_next = st.columns([1, 3, 1])
     with nav_prev:
-        if st.session_state.current_step > 1:
-            if st.button("← 이전 단계", key=f"prev_{st.session_state.current_step}", type="secondary"):
+        if _curr > 1:
+            _prev_label = _step_names.get(_curr - 1, "")
+            if st.button(f"← {_prev_label}", key=f"prev_{_curr}",
+                          type="secondary", use_container_width=True):
                 st.session_state.current_step -= 1
                 st.rerun()
     with nav_next:
-        if st.session_state.current_step < 4:
-            if st.button("다음 단계 →", key=f"next_{st.session_state.current_step}", type="primary"):
+        if _curr < 4:
+            _next_label = _step_names.get(_curr + 1, "")
+            if st.button(f"{_next_label} →", key=f"next_{_curr}",
+                          type="primary", use_container_width=True):
                 st.session_state.current_step += 1
                 st.rerun()
 
@@ -2261,44 +2267,36 @@ def _render_nav_buttons():
 # render_step1: 🔍 소스 선택 (3블록 구조)
 # ═════════════════════════════════════════════════════════════════
 def render_step1():
-    st.markdown('<div class="ux-card"><div class="ux-card-title">STEP 01</div><h4>소스 선택</h4><p class="ux-sub">제품 정보 입력 → 영상 확보 → 참고 도구 순서로 진행하세요</p></div>', unsafe_allow_html=True)
-
-    # ╔══════════════════════════════════════════════════════════╗
-    # ║ 블록 1: 📦 제품 정보                                      ║
-    # ╚══════════════════════════════════════════════════════════╝
-    st.markdown("## 📦 블록 1 — 제품 정보")
-    st.markdown('<div class="ux-card">', unsafe_allow_html=True)
-
-    # ── 쿠팡 URL + OG 자동 추출 ──
-    st.markdown("#### 🛒 쿠팡 상품 URL (선택)")
+    # 통합 헤더 (STEP 표시 + 부제 한 카드)
     st.markdown(
-        '<div class="info-box">'
-        '💡 <strong>쿠팡 파트너스 API 없어도 OK</strong> — 상품명만 직접 입력하면 모든 기능 작동.<br>'
-        'URL은 추적 링크(STEP 4)용이며, 단축 URL(<code>link.coupang.com/a/XXX</code>)도 지원.<br>'
-        '쿠팡 차단 정책으로 자동 추출은 안 되지만, <strong>본인이 만든 추적 링크 그대로 사용</strong>하시면 됩니다.'
+        '<div class="ux-card">'
+        '<div class="ux-card-title">STEP 01 · 소스</div>'
+        '<h4 style="margin:4px 0 6px;">📦 제품 정보 입력</h4>'
+        '<p class="ux-sub">제품명 + 카테고리만 정확하면 나머지는 AI가 알아서 합니다</p>'
         '</div>',
         unsafe_allow_html=True,
     )
+
+    # ── 쿠팡 URL + OG 자동 추출 (UI 정리: 단일 카드) ──
+    st.markdown("##### 🛒 쿠팡 상품 URL <span style='font-size:.7rem;color:#9CA3AF;font-weight:400;'>선택 · 추적 링크용</span>",
+                unsafe_allow_html=True)
     coupang_url = st.text_input(
         "쿠팡 상품 URL",
-        placeholder="https://link.coupang.com/a/XXXXX  또는  https://www.coupang.com/vp/products/...",
-        label_visibility="collapsed"
+        placeholder="https://link.coupang.com/a/XXXXX  (단축 URL도 OK)",
+        label_visibility="collapsed",
+        help="쿠팡 파트너스 API 없어도 동작. URL은 STEP 4 추적 링크에만 쓰임."
     )
-    st.caption("쿠팡 파트너스가 처음이신가요? [가입 안내 보기](https://partners.coupang.com/)")
 
     col_extract, col_status = st.columns([1, 3])
     with col_extract:
         do_extract = st.button("🔍 상품 정보 추출", use_container_width=True)
 
     if do_extract and coupang_url:
-        with st.spinner("OG 태그 + 상품 정보 추출 중... (5-10초)"):
-            # OG 태그 스크래핑 (단축 URL이 아닌 경우만 의미 있음)
+        with st.spinner("상품 정보 추출 중..."):
             og = scrape_og_tags(coupang_url) if "link.coupang.com" not in coupang_url else {}
             st.session_state["og_tags"] = og
-            # 제품명 추출 시도
             info = extract_coupang_info(coupang_url)
 
-            # "Deeplink Redirect" 같은 의미없는 OG 텍스트 필터
             _bad_og = ("deeplink", "redirect", "쿠팡!", "coupang")
             _og_clean = (og.get("og_title", "").strip()
                           if og.get("og_title") else "")
@@ -2313,30 +2311,57 @@ def render_step1():
                 st.session_state.coupang_product = cleaned
                 info["success"] = True
 
+            # ── 통합 결과 카드 (성공/실패 한 장으로) ──
             if info["success"]:
-                st.success(f"✅ 추출 완료: {st.session_state.coupang_product}")
-                if og.get("og_image"):
-                    st.image(og["og_image"], width=200, caption="OG 대표 이미지")
-                if og.get("og_description"):
-                    st.caption(f"📝 {og['og_description'][:120]}")
+                _img_url = og.get("og_image", "")
+                _desc = og.get("og_description", "")[:120]
+                _img_html = ""
+                if _img_url:
+                    _img_html = (f'<img src="{_img_url}" style="width:80px;height:80px;'
+                                  f'border-radius:8px;object-fit:cover;flex-shrink:0;" alt="">')
+                _desc_html = ""
+                if _desc:
+                    _desc_html = (f'<div style="font-size:.82rem;color:#166534;margin-top:6px;">'
+                                   f'{_desc}</div>')
+                _name = st.session_state.coupang_product
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,#F0FDF4 0%,#DCFCE7 100%);'
+                    f'border:1px solid #86EFAC;border-radius:12px;padding:16px;margin:8px 0;'
+                    f'display:flex;gap:12px;align-items:flex-start;">'
+                    f'{_img_html}'
+                    f'<div style="flex:1;">'
+                    f'<div style="font-size:.75rem;color:#15803D;font-weight:700;'
+                    f'text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">'
+                    f'✅ 추출 완료</div>'
+                    f'<div style="font-size:1rem;font-weight:700;color:#14532D;'
+                    f'line-height:1.4;">{_name}</div>'
+                    f'{_desc_html}'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                # 쿠팡 봇 차단 — 명확한 안내 + productId placeholder 제공
-                st.warning("⚠️ 쿠팡이 자동 추출을 차단했습니다 (봇 방지 정책으로 모든 도구 동일)")
-                _err_detail = info.get("error", "")
                 _pid = info.get("product_id", "")
-                with st.expander("자세히 보기"):
-                    st.markdown(f"- 사유: `{_err_detail}`")
-                    if _pid:
-                        st.markdown(f"- 추출된 productId: `{_pid}`")
-                    st.markdown(
-                        "- 쿠팡은 상품 상세 페이지를 외부 서버에서 요청하면 차단합니다.\n"
-                        "- **해결책**: 쿠팡 앱/브라우저에서 상품명을 직접 복사 → 아래 '제품명' 입력란에 붙여넣기.\n"
-                        "- URL은 그대로 STEP 4에서 추적 링크 생성에 사용됩니다."
-                    )
-                # placeholder로 productId 자동 채움 (사용자가 수정 가능)
+                _placeholder_text = f"쿠팡 상품 #{_pid}" if _pid else ""
                 if _pid and not st.session_state.coupang_product:
-                    st.session_state.coupang_product = info.get("name", "")
-                st.info("👇 아래 '제품명'에 직접 입력하시면 모든 기능 정상 작동합니다.")
+                    st.session_state.coupang_product = _placeholder_text
+                _pid_html = ""
+                if _pid:
+                    _pid_html = (f'<br><span style="opacity:.7;font-size:.78rem;">'
+                                  f'URL에서 자동 감지: 쿠팡 상품 ID #{_pid}</span>')
+                # 통합 단일 카드 — warning + 안내 + 사유 한 번에
+                st.markdown(
+                    f'<div style="background:linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%);'
+                    f'border:1px solid #FCD34D;border-radius:12px;padding:16px;margin:8px 0;">'
+                    f'<div style="font-size:.95rem;font-weight:700;color:#92400E;'
+                    f'margin-bottom:8px;">ℹ️ 자동 추출 불가 — 상품명만 직접 입력하면 됩니다</div>'
+                    f'<div style="font-size:.85rem;color:#78350F;line-height:1.5;">'
+                    f'쿠팡은 모든 외부 도구를 차단합니다 (정책). '
+                    f'<strong>📱 쿠팡 앱에서 상품명 복사 → 아래 입력란에 붙여넣기</strong> 만 하시면 '
+                    f'AI 대본 + 추적 링크 모든 기능 정상 작동합니다.'
+                    f'{_pid_html}'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
 
     # ── OG 결과 표시 (이전 추출 결과) ──
     if st.session_state.get("og_tags", {}).get("success") and not do_extract:
@@ -2349,29 +2374,68 @@ def render_step1():
             if og.get("og_description"):
                 st.markdown(f"**설명**: {og['og_description'][:150]}")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.coupang_product = st.text_input(
-            "제품명", value=st.session_state.coupang_product, placeholder="예: 애플 에어팟 프로 2세대"
-        )
-    with c2:
-        st.session_state.coupang_category = st.selectbox(
-            "카테고리", ["전자기기", "뷰티/화장품", "패션/의류", "식품", "생활용품", "건강/헬스", "유아/키즈", "반려동물", "기타"]
-        )
+    # ── 제품명 (단일화 — 기존 2개 제품명 입력란 통합) ──
+    st.markdown("##### ✏️ 제품명 <span style='color:#EF4444;'>*</span>",
+                unsafe_allow_html=True)
+    st.session_state.coupang_product = st.text_input(
+        "제품명",
+        value=st.session_state.coupang_product,
+        placeholder="예: 닥터자르트 시카페어 토너 200ml",
+        label_visibility="collapsed",
+        help="쿠팡 앱에서 상품명 그대로 복사해 붙여넣으면 가장 좋아요.",
+    )
 
-    s1c1, s1c2 = st.columns(2)
-    with s1c1:
-        product_name = st.text_input("📦 제품명 (표시용)", placeholder="예: 무선 이어폰 Pro X", key="_w_pname")
-    with s1c2:
-        product_desc = st.text_area("📝 제품 설명", placeholder="특징, 장점 입력", height=85, key="_w_pdesc")
+    # ── 카테고리 자동 추론 + 강조 ──
+    _ui_categories = ["전자기기", "뷰티/화장품", "패션/의류", "식품",
+                       "생활용품", "건강/헬스", "유아/키즈", "반려동물", "기타"]
+    _name_for_infer = st.session_state.coupang_product or ""
+    _suggested_cat = ""
+    if _name_for_infer:
+        try:
+            _internal_id = category_templates.infer_category(_name_for_infer)
+            _id_to_ui = {v: k for k, v in
+                          category_templates.UI_TO_INTERNAL_CATEGORY.items()}
+            _suggested_cat = _id_to_ui.get(_internal_id, "")
+        except Exception:
+            pass
+    _curr_cat = st.session_state.coupang_category or _suggested_cat or "기타"
+    _default_idx = _ui_categories.index(_curr_cat) if _curr_cat in _ui_categories else 0
 
-    # ── 위젯 값을 영구 session_state에 동기화 (다른 STEP에서 접근 가능) ──
-    if product_name and not st.session_state.coupang_product:
-        st.session_state.coupang_product = product_name
-    if product_name:
-        st.session_state["_saved_pname"] = product_name
-    if product_desc:
-        st.session_state["_saved_pdesc"] = product_desc
+    st.markdown("##### 🏷️ 카테고리 <span style='color:#EF4444;'>*</span>",
+                unsafe_allow_html=True)
+    if (_suggested_cat and _suggested_cat != "기타"
+            and _suggested_cat != st.session_state.coupang_category):
+        st.markdown(
+            f'<div style="background:#FFF7ED;border-left:3px solid #FF6B35;'
+            f'padding:8px 12px;border-radius:6px;margin-bottom:6px;'
+            f'font-size:.85rem;color:#9A3412;">'
+            f'💡 제품명 분석 → <strong>{_suggested_cat}</strong> 카테고리 추천. '
+            f'아래에서 변경하세요.'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    st.session_state.coupang_category = st.selectbox(
+        "카테고리",
+        _ui_categories,
+        index=_default_idx,
+        label_visibility="collapsed",
+        help="카테고리에 맞는 viral 패턴/Hook/CTA가 자동 적용돼요.",
+    )
+
+    # ── 제품 설명 (선택, 접기 — 진입 부담 낮춤) ──
+    with st.expander("📝 제품 설명 추가 (선택, 대본 품질 ↑)"):
+        product_desc = st.text_area(
+            "특징/장점",
+            placeholder="예: 시카 성분 70% 농도, 200ml 대용량, 민감성 피부 진정",
+            height=85, key="_w_pdesc",
+            label_visibility="collapsed",
+        )
+        if product_desc:
+            st.session_state["_saved_pdesc"] = product_desc
+
+    if st.session_state.coupang_product:
+        st.session_state["_saved_pname"] = st.session_state.coupang_product
+    product_name = st.session_state.coupang_product
 
     content_modes = ["클릭유도형", "구매전환형", "리뷰형", "비교형", "문제해결형", "바이럴형"]
     mode_desc = {
