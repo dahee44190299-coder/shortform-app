@@ -121,7 +121,8 @@ PERSONAL_CONTEXT_TEMPLATE = """
 
 def build_master_prompt(use_case: str, category: str, product: str,
                          tone: str = "친근한 반말", target_chars: int = 200,
-                         personal_context: str = "") -> tuple:
+                         personal_context: str = "",
+                         pattern_id: str = "") -> tuple:
     """완성된 (system, user) 프롬프트 페어 반환.
 
     Args:
@@ -143,6 +144,16 @@ def build_master_prompt(use_case: str, category: str, product: str,
         "전문가 톤": "객관적 데이터 중심. 단, 너무 건조하지 않게. 수치 + 짧은 평가.",
     }.get(tone, "친구한테 카톡 보내듯이.")
 
+    # 패턴 가이드 (지정된 경우)
+    pattern_block = ""
+    if pattern_id:
+        try:
+            import viral_patterns
+            pattern_block = "\n[강제 적용 viral 패턴]\n" + \
+                            viral_patterns.format_pattern_brief(pattern_id, product)
+        except Exception:
+            pass
+
     base_user = f"""상품/주제: {product}
 카테고리: {category}
 타겟 분량: {target_chars}자 내외 (30초 음성)
@@ -151,16 +162,17 @@ def build_master_prompt(use_case: str, category: str, product: str,
 {booster}
 
 {FEW_SHOT_EXAMPLES}
-
+{pattern_block}
 [지금 작성할 대본]
-위 좋은 예시 패턴을 따라 '{product}' 대본을 작성하세요.
+위 좋은 예시 + (지정된 경우) viral 패턴을 따라 '{product}' 대본을 작성하세요.
 
 필수:
 - 첫 문장 25자 이내, 의문문 또는 강한 단어
-- 구체적 수치/이름/사례 **반드시 1개 이상**
+- 구체적 수치/이름/사례 **반드시 1개 이상** (가격/시점/사람/스펙)
 - ChatGPT 클리셰 ('지금 바로', '확인하세요', '진짜 좋아요') 사용 금지
 - {tone}으로 자연스럽게
 - 마크다운 (#, **, ---) 금지
+- 한 문장 15자 이내, 짧고 리듬감
 
 대본만 출력:"""
 

@@ -16,6 +16,7 @@ import constants
 import use_cases
 import script_judge
 import script_prompts
+import viral_patterns
 import whitelist
 import admin_dashboard
 from constants import (
@@ -3404,35 +3405,77 @@ def render_step3():
                 _personal_ctx = st.session_state.get("_personal_context", "")
                 st.session_state["_last_inferred_category"] = _inferred_cat
 
-                # 새 마스터 프롬프트 (script_prompts.py) — 페르소나 + few-shot 예시
-                _sys_prompt, _user_base = script_prompts.build_master_prompt(
-                    use_case=_active_uc, category=_inferred_cat, product=pname,
-                    tone=_script_tone, target_chars=200,
-                    personal_context=_personal_ctx,
-                )
+                # 카테고리에 맞는 3가지 viral 패턴 자동 선정
+                _three_patterns = viral_patterns.pick_three_patterns(_inferred_cat, _active_uc)
 
-                def _gen_script(improvement_hint: str = "") -> str:
-                    extra = (f"\n\n[직전 시도 약점 — 반드시 개선]\n{improvement_hint}\n"
-                             "이번엔 더 구체적이고 친근하게."
-                             if improvement_hint else "")
-                    return call_claude(
-                        _sys_prompt,
-                        _user_base + extra,
-                        prompt_type="script_viral",
-                    ) or ""
+                # 3개 변형 동시 생성 (각각 다른 viral 패턴)
+                _variants = []
+                for _pid in _three_patterns:
+                    _sys, _usr = script_prompts.build_master_prompt(
+                        use_case=_active_uc, category=_inferred_cat, product=pname,
+                        tone=_script_tone, target_chars=200,
+                        personal_context=_personal_ctx, pattern_id=_pid,
+                    )
+                    _script_v = call_claude(_sys, _usr, prompt_type=f"script_viral_{_pid}") or ""
+                    if _script_v:
+                        _judge_v = script_judge.judge_script(
+                            _script_v, product=pname, category=_inferred_cat,
+                            use_case=_active_uc, min_score=85,
+                        )
+                        _variants.append({
+                            "pattern_id": _pid,
+                            "pattern_label": viral_patterns.get_pattern(_pid)["label"],
+                            "script": _script_v,
+                            "judge": _judge_v,
+                            "score": _judge_v.get("total", 0),
+                        })
 
-                _loop = script_judge.generate_with_quality_loop(
-                    _gen_script, product=pname, category=_inferred_cat,
-                    use_case=_active_uc, min_score=85, max_attempts=3,
-                )
-                result = _loop["script"]
-
-                if result:
-                    st.session_state.coupang_script = result
-                    st.session_state["_last_judge"] = _loop.get("judge", {})
-                    st.session_state["_last_attempts"] = _loop["attempts"]
+                if _variants:
+                    # 점수 높은 순으로 정렬
+                    _variants.sort(key=lambda v: -v["score"])
+                    st.session_state["_script_variants"] = _variants
+                    # 자동으로 가장 높은 점수 선택
+                    st.session_state.coupang_script = _variants[0]["script"]
+                    st.session_state["_last_judge"] = _variants[0]["judge"]
+                    st.session_state["_last_attempts"] = len(_variants)
+                    st.session_state["_selected_variant_idx"] = 0
                 else:
                     st.markdown('<div class="demo-banner">⚠️ API 키 없음 — 데모 모드에서는 생성되지 않습니다</div>', unsafe_allow_html=True)
+
+        # ── 3가지 viral 패턴 변형 비교 + 선택 ──
+        _variants = st.session_state.get("_script_variants", [])
+        if _variants and len(_variants) > 1:
+            st.markdown("### 🎨 3가지 viral 패턴 — 마음에 드는 거 선택")
+            _v_cols = st.columns(len(_variants))
+            _curr_idx = st.session_state.get("_selected_variant_idx", 0)
+            for _vi, _v in enumerate(_variants):
+                with _v_cols[_vi]:
+                    _is_sel = (_vi == _curr_idx)
+                    _emoji = "🟢" if _v["score"] >= 85 else ("🟡" if _v["score"] >= 70 else "🔴")
+                    _border = "3px solid #FF6B35" if _is_sel else "1px solid #E5E7EB"
+                    st.markdown(
+                        f'<div style="border:{_border};border-radius:12px;padding:12px;'
+                        f'background:#fff;height:100%;">'
+                        f'<div style="font-size:.8rem;color:#FF6B35;font-weight:700;">{_v["pattern_label"]}</div>'
+                        f'<div style="font-size:1.4rem;font-weight:800;margin:6px 0;">'
+                        f'{_emoji} {_v["score"]}<span style="font-size:.8rem;color:#888;">/100</span></div>'
+                        f'</div>', unsafe_allow_html=True)
+                    st.text_area(
+                        f"v{_vi+1}", value=_v["script"], height=200,
+                        key=f"_variant_show_{_vi}", label_visibility="collapsed"
+                    )
+                    if st.button(
+                        "✅ 이걸로 선택" if not _is_sel else "👉 현재 선택됨",
+                        key=f"_pick_variant_{_vi}",
+                        type="primary" if _is_sel else "secondary",
+                        use_container_width=True,
+                        disabled=_is_sel,
+                    ):
+                        st.session_state["_selected_variant_idx"] = _vi
+                        st.session_state.coupang_script = _v["script"]
+                        st.session_state["_last_judge"] = _v["judge"]
+                        st.rerun()
+            st.markdown("---")
 
         # ── 점수 + 차원별 표시 + 다시 생성 버튼 ──
         _judge = st.session_state.get("_last_judge", {})
