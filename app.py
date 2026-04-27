@@ -259,6 +259,92 @@ button[kind="secondary"]:hover{background:#F7F8FA!important;color:#1A1A2E!import
 .opt-card-icon{font-size:1.6rem;margin-bottom:4px;}
 .opt-card-title{font-size:.9rem;font-weight:700;color:#1A1A2E!important;margin:4px 0;}
 .opt-card-desc{font-size:.78rem;color:#6B7280!important;margin-bottom:8px;}
+
+/* ═════ UI/UX Pro — 디자인 폴리시 ═════ */
+/* 부드러운 페이지 전환 */
+.stApp{transition:background .3s ease;}
+.main .block-container{padding-top:1.5rem!important;padding-bottom:3rem!important;max-width:1200px!important;}
+
+/* 메인 헤더 그라디언트 */
+.main h1,.main h2,.main h3{letter-spacing:-.02em;}
+.main h1{background:linear-gradient(135deg,#1A1A2E 0%,#4A5568 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:800;}
+
+/* 카드 호버 효과 */
+.ux-card,.opt-card,.card{transition:transform .2s ease,box-shadow .2s ease;}
+.ux-card:hover,.opt-card:hover,.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.08);}
+
+/* 프라이머리 버튼 — 그라디언트 + 부드러운 호버 */
+button[kind="primary"]{background:linear-gradient(135deg,#FF6B35 0%,#F7931E 100%)!important;
+  box-shadow:0 4px 12px rgba(255,107,53,.25)!important;transition:all .2s ease!important;}
+button[kind="primary"]:hover{background:linear-gradient(135deg,#E55A2B 0%,#E68317 100%)!important;
+  transform:translateY(-2px)!important;box-shadow:0 6px 20px rgba(255,107,53,.35)!important;}
+button[kind="primary"]:active{transform:translateY(0)!important;}
+
+/* 사이드바 — 글래스모피즘 */
+[data-testid="stSidebar"]{
+  background:linear-gradient(180deg,#FAFBFC 0%,#F2F4F7 100%)!important;
+  backdrop-filter:blur(10px);
+  border-right:1px solid rgba(229,232,235,.6)!important;
+}
+[data-testid="stSidebar"] .stButton>button{
+  background:#fff!important;color:#1A1A2E!important;border:1px solid #E5E8EB!important;
+  border-radius:10px!important;font-size:.85rem!important;padding:8px 14px!important;
+  transition:all .15s ease!important;
+}
+[data-testid="stSidebar"] .stButton>button:hover{
+  background:#F7F8FA!important;border-color:#FF6B35!important;color:#FF6B35!important;
+}
+[data-testid="stSidebar"] button[kind="primary"]{
+  background:linear-gradient(135deg,#FF6B35 0%,#F7931E 100%)!important;color:#fff!important;
+  border:none!important;box-shadow:0 2px 8px rgba(255,107,53,.3)!important;
+}
+
+/* 입력 필드 포커스 — 부드러운 강조 */
+.stTextInput input:focus,.stTextArea textarea:focus,.stSelectbox>div>div:focus-within{
+  border-color:#FF6B35!important;box-shadow:0 0 0 3px rgba(255,107,53,.1)!important;
+  outline:none!important;
+}
+
+/* metric 카드 — 부드러운 강조 */
+[data-testid="stMetric"]{
+  background:#fff;border:1px solid #E5E8EB;border-radius:12px;padding:14px 18px;
+  box-shadow:0 1px 3px rgba(0,0,0,.04);transition:transform .2s ease,box-shadow .2s ease;
+}
+[data-testid="stMetric"]:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.06);}
+[data-testid="stMetricValue"]{font-weight:700!important;color:#1A1A2E!important;font-size:1.6rem!important;}
+[data-testid="stMetricLabel"]{color:#6B7280!important;font-size:.78rem!important;font-weight:600!important;text-transform:uppercase;letter-spacing:.5px;}
+
+/* expander — 부드러운 외관 */
+div[data-testid="stExpander"]{border-radius:12px!important;transition:box-shadow .15s ease;}
+div[data-testid="stExpander"]:hover{box-shadow:0 4px 12px rgba(0,0,0,.05);}
+
+/* st.success/error/warning/info — 둥근 모서리 + 그림자 */
+.stAlert{border-radius:12px!important;box-shadow:0 2px 8px rgba(0,0,0,.04)!important;}
+
+/* 진행 상태 바 (STEP 칩) — 그라디언트 + glow */
+.step-chip-active{box-shadow:0 4px 14px rgba(255,107,53,.4);}
+
+/* 모바일 반응형 */
+@media (max-width:768px){
+  .main .block-container{padding:1rem!important;}
+  .ux-card,.card{padding:16px!important;}
+  .stButton>button{font-size:.85rem!important;padding:8px 16px!important;}
+}
+
+/* 스크롤바 — 깔끔한 외관 */
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-track{background:#F7F8FA;}
+::-webkit-scrollbar-thumb{background:#D1D5DB;border-radius:4px;}
+::-webkit-scrollbar-thumb:hover{background:#9CA3AF;}
+
+/* 코드 블록 — 가독성 */
+code,pre{font-family:'Pretendard',monospace!important;background:#F7F8FA!important;
+  border-radius:6px!important;padding:2px 6px!important;font-size:.85em!important;color:#FF6B35!important;}
+pre code{background:transparent!important;color:#1A1A2E!important;}
+
+/* 링크 호버 */
+a{color:#FF6B35!important;text-decoration:none!important;transition:color .15s;}
+a:hover{color:#E55A2B!important;text-decoration:underline!important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -4449,15 +4535,39 @@ with st.sidebar:
         }.get(_tier, "🆓 Free")
         st.caption(f"티어: {_tier_emoji}")
 
-        if _tier == "founder":
-            st.markdown("---")
-            st.markdown("### 👑 관리자")
-            if st.button("🏠 영상 작업으로", key="_sb_to_app", use_container_width=True):
-                st.session_state.app_phase = "project_select"
+    # ── 🧭 STEP 점프 네비게이션 (사용자 요청: 각 단계 독립 실행) ──
+    st.markdown("---")
+    st.markdown("### 🧭 빠른 이동")
+    if st.button("🏠 홈/프로젝트", key="_sb_home", use_container_width=True):
+        st.session_state.app_phase = "project_select"
+        st.rerun()
+
+    # 활성 프로젝트 있을 때만 STEP 메뉴 노출
+    if st.session_state.get("active_project_id"):
+        _step_labels = [
+            (1, "1️⃣ 소스 선택"),
+            (2, "2️⃣ 영상 편집"),
+            (3, "3️⃣ AI 대본·자막"),
+            (4, "4️⃣ 추적 + 다운로드"),
+        ]
+        _curr = st.session_state.get("current_step", 1)
+        for _n, _label in _step_labels:
+            _icon = "▶" if _n == _curr else "  "
+            if st.button(f"{_icon} {_label}", key=f"_sb_step_{_n}",
+                          use_container_width=True,
+                          type="primary" if _n == _curr else "secondary"):
+                st.session_state.app_phase = "pipeline"
+                st.session_state.current_step = _n
                 st.rerun()
-            if st.button("📊 관리자 페이지", key="_sb_to_admin", use_container_width=True):
-                st.session_state.app_phase = "admin"
-                st.rerun()
+    else:
+        st.caption("프로젝트를 선택/생성하면 STEP 메뉴가 활성화됩니다.")
+
+    if _sb_uid and whitelist.is_founder(_sb_uid):
+        st.markdown("---")
+        st.markdown("### 👑 관리자")
+        if st.button("📊 관리자 페이지", key="_sb_to_admin", use_container_width=True):
+            st.session_state.app_phase = "admin"
+            st.rerun()
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -4475,11 +4585,38 @@ elif st.session_state.app_phase == "project_select":
 elif st.session_state.app_phase == "template_select":
     render_template_select()
 elif st.session_state.app_phase == "pipeline":
-    if st.session_state.current_step == 1:
+    # 활성 프로젝트 없이 STEP 직접 접근 시 — 임시 프로젝트 자동 생성 (UX 개선)
+    if not st.session_state.get("active_project_id"):
+        st.warning("⚠️ 활성 프로젝트가 없습니다. 임시 프로젝트로 시작합니다.")
+        _temp_pid = project_store.create_project(
+            f"임시 프로젝트 {time.strftime('%m-%d %H:%M')}",
+            product_name="", category="기타",
+        )
+        st.session_state.active_project_id = _temp_pid
+        st.rerun()
+
+    # ── STEP 진행 표시 (모든 STEP 공통) ──
+    _curr = st.session_state.get("current_step", 1)
+    _step_emojis = ["1️⃣ 소스", "2️⃣ 편집", "3️⃣ AI 대본", "4️⃣ 추적+DL"]
+    _step_html = '<div style="display:flex;gap:6px;margin:0 0 16px;flex-wrap:wrap;">'
+    for _i, _lbl in enumerate(_step_emojis, 1):
+        if _i == _curr:
+            _bg, _fg, _w = "#FF6B35", "#fff", "700"
+        elif _i < _curr:
+            _bg, _fg, _w = "#4CAF50", "#fff", "600"
+        else:
+            _bg, _fg, _w = "#F3F4F6", "#6B7280", "500"
+        _step_html += (f'<div style="background:{_bg};color:{_fg};padding:6px 14px;'
+                       f'border-radius:20px;font-size:.85rem;font-weight:{_w};">{_lbl}</div>')
+    _step_html += '</div>'
+    st.markdown(_step_html, unsafe_allow_html=True)
+
+    # ── STEP 라우팅 ──
+    if _curr == 1:
         render_step1()
-    elif st.session_state.current_step == 2:
+    elif _curr == 2:
         render_step2()
-    elif st.session_state.current_step == 3:
+    elif _curr == 3:
         render_step3()
-    elif st.session_state.current_step == 4:
+    elif _curr == 4:
         render_step4()
