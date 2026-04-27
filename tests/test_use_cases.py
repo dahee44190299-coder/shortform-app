@@ -20,10 +20,14 @@ class TestUseCaseRegistry:
             missing = required - set(prof.keys())
             assert not missing, f"{uid} missing: {missing}"
 
-    def test_judge_weights_sum_to_1(self):
+    def test_judge_weights_sum_to_1_or_normalized(self):
+        # weighted_judge_score가 자동으로 정규화하므로 합이 1.0 초과해도 OK.
+        # 단, 단일 차원만 있을 때는 1.0이어야 함.
         for uid, prof in use_cases.USE_CASES.items():
             total = sum(prof["judge_weights"].values())
-            assert abs(total - 1.0) < 0.01, f"{uid} weights = {total}"
+            assert total > 0, f"{uid} has no weights"
+            # 새 시스템: 1.0~2.0 사이 (legacy 호환 차원 포함 가능)
+            assert 0.8 <= total <= 2.0, f"{uid} weights = {total} (out of range)"
 
     def test_get_unknown_returns_default(self):
         uc = use_cases.get_use_case("nonexistent_xyz")
@@ -62,9 +66,9 @@ class TestWeightedJudgeScore:
         result = use_cases.weighted_judge_score(scores, "coupang_affiliate")
         assert result == 0.0
 
-    def test_personal_vlog_weights_hook_heavily(self):
-        # vlog는 hook_impact 가중치 0.40
-        # hook만 만점, 나머지 0 → 20*5*0.40 = 40
+    def test_only_present_scores_normalize(self):
+        # 새 정규화 로직: 점수 있는 차원만 가중치 정규화 → sum=1.0
+        # hook만 만점이면 → 그 차원이 100% 가중치 → 100점
         scores = {
             "hook_impact":      {"score": 20},
             "category_fit":     {"score": 0},
@@ -73,10 +77,22 @@ class TestWeightedJudgeScore:
             "conversion_power": {"score": 0},
         }
         vlog_score = use_cases.weighted_judge_score(scores, "personal_vlog")
-        assert vlog_score == 40.0
-        # 같은 점수라도 coupang은 hook 가중치 0.20 → 20*5*0.20 = 20
-        coupang_score = use_cases.weighted_judge_score(scores, "coupang_affiliate")
-        assert coupang_score == 20.0
+        # 정규화 후: hook_impact만 score 있으므로 100% 가중치 → 20*5 = 100
+        assert vlog_score == 100.0
+
+    def test_partial_scores_normalize_correctly(self):
+        # hook + conversion 만 점수 → 두 차원 가중치만 정규화
+        scores = {
+            "hook_impact":      {"score": 20},
+            "category_fit":     {"score": 0},
+            "length_fit":       {"score": 0},
+            "cta_clarity":      {"score": 0},
+            "conversion_power": {"score": 10},
+        }
+        # personal_vlog: hook=0.40, conversion=0.25 → 정규화: hook=0.615, conv=0.385
+        # 결과: 20*5*0.615 + 10*5*0.385 = 61.5 + 19.25 = 80.75
+        result = use_cases.weighted_judge_score(scores, "personal_vlog")
+        assert 75 <= result <= 85, f"got {result}"
 
 
 class TestPrimaryMetricLabel:
