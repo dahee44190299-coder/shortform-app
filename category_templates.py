@@ -114,6 +114,25 @@ def infer_category(product_title: str = "", product_url: str = "") -> str:
     return best_id
 
 
+# UI 카테고리(한국어) ↔ 내부 카테고리 ID 매핑
+UI_TO_INTERNAL_CATEGORY = {
+    "전자기기": "digital",
+    "뷰티/화장품": "beauty",
+    "패션/의류": "fashion",
+    "식품": "food",
+    "생활용품": "household",
+    "건강/헬스": "food",  # 영양제 등은 food 가이드 활용
+    "유아/키즈": "baby_kids",
+    "반려동물": "pet",
+    "기타": "general",
+}
+
+
+def map_ui_category(ui_label: str) -> str:
+    """UI 라벨('반려동물') → 내부 ID('pet') 변환. 없으면 general."""
+    return UI_TO_INTERNAL_CATEGORY.get(ui_label, "general")
+
+
 def get_template(category_id: str) -> dict:
     """카테고리 프로필 반환. 모르는 id면 general."""
     return CATEGORY_PROFILES.get(category_id, CATEGORY_PROFILES["general"])
