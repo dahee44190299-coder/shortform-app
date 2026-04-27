@@ -1,0 +1,29 @@
+# Streamlit Cloud 배포 + 로컬 공통 설정
+
+[server]
+# 업로드 파일 크기 제한 (영상 업로드용)
+maxUploadSize = 200    # MB
+maxMessageSize = 200   # MB
+# Cloud에서는 0.0.0.0 자동, 로컬은 localhost
+enableXsrfProtection = true
+enableCORS = false
+
+[browser]
+gatherUsageStats = false  # Streamlit 사용통계 비활성화 (개인정보 보호)
+
+[theme]
+primaryColor = "#FF6B35"             # 주황 (쿠팡 브랜드와 호환)
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8F9FA"
+textColor = "#1F2937"
+font = "sans serif"
+
+[runner]
+# 코드 변경 시 자동 reload (개발용, Cloud에서도 OK)
+fastReruns = true
+magicEnabled = true
+
+[client]
+# 사용자가 새로고침해도 토스트 안 사라지게
+toolbarMode = "minimal"  # 사용자 환경에서는 우측 메뉴 최소화
+showErrorDetails = true   # 에러 상세 표시 (디버깅 용이)

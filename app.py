@@ -15,6 +15,7 @@ import stock_video
 import constants
 import use_cases
 import script_judge
+import whitelist
 from constants import (
     TEMPLATES, CATEGORY_HASHTAGS, COMMON_HASHTAGS,
     BGM_CATEGORY_KEYWORDS, PEXELS_CATEGORY_KEYWORDS,
@@ -266,6 +267,7 @@ defaults = {
     "tts_done":False, "subtitle_done":False, "sample_subs":[],
     "script_history":[], "subtitle_history":[], "search_results":[],
     "active_use_case": "coupang_affiliate",
+    "user_id": "",  # 사용자 식별 (이메일 또는 익명 ID), whitelist 체크용
     "coupang_product":"", "coupang_category":"", "coupang_titles":[],
     "coupang_script":"", "coupang_hashtags":"", "coupang_desc":"",
     "product_images":[], "uploaded_images":[], "_prod_videos":[], "_yt_results":[], "_ai_trend_result":"",
@@ -335,6 +337,67 @@ def render_project_select():
                 st.rerun()
 
     st.markdown('<div class="ux-card"><div class="ux-card-title">HOME</div><h4>📁 프로젝트 선택</h4><p class="ux-sub">프로젝트를 선택하거나 새로 만들어주세요</p></div>', unsafe_allow_html=True)
+
+    # ── 🎫 사용자 티어 + 초대 코드 (Phase 4 무료 티어) ──
+    with st.expander("🎫 내 티어 + 초대 코드", expanded=False):
+        _uid = st.text_input(
+            "내 user_id (이메일 또는 별명)",
+            value=st.session_state.get("user_id", ""),
+            key="_user_id_input",
+            help="founder/초대받은 사용자는 영구 무료. 일반 사용자는 Free 티어로 시작.",
+        )
+        if _uid != st.session_state.get("user_id", ""):
+            st.session_state.user_id = _uid
+
+        _tier = whitelist.user_tier(_uid)
+        _tier_label = {
+            "founder": "👑 Founder (모든 기능 영구 무료)",
+            "invitee": "✨ Invitee (초대받은 사용자, 영구 무료)",
+            "pro": "💎 Pro (유료 구독자)",
+            "free": "🆓 Free (제한 있음)",
+        }.get(_tier, "🆓 Free")
+        st.markdown(f"**현재 티어**: {_tier_label}")
+
+        if _tier == "free":
+            _code_input = st.text_input(
+                "초대 코드 입력 (받았다면)",
+                placeholder="INV-XXXX-XXXX",
+                key="_invite_code_input",
+            )
+            if st.button("🎟️ 코드 등록", key="btn_redeem"):
+                _result = whitelist.redeem_invite_code(_code_input.strip(), _uid)
+                if _result["ok"]:
+                    st.success(f"✅ {_result['reason']}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {_result['reason']}")
+
+        if _tier == "founder":
+            st.caption("👑 Founder 권한 — 초대 코드 발급 가능")
+            _fc1, _fc2 = st.columns([3, 1])
+            with _fc1:
+                _note = st.text_input("발급 메모 (선택)", placeholder="예: 베타 사용자 김XX",
+                                       key="_invite_note")
+            with _fc2:
+                if st.button("🎫 코드 발급", key="btn_gen_invite", type="primary"):
+                    _new_code = whitelist.generate_invite_code(
+                        created_by=_uid, note=_note, max_uses=1
+                    )
+                    st.session_state["_last_invite_code"] = _new_code
+                    st.rerun()
+
+            if st.session_state.get("_last_invite_code"):
+                st.code(st.session_state["_last_invite_code"], language="")
+                st.caption("위 코드를 사용자에게 전달하세요. 1회 사용 후 만료.")
+
+            _codes = whitelist.list_invite_codes()
+            if _codes:
+                with st.expander(f"📋 발급 이력 ({len(_codes)}건)"):
+                    for c in _codes[:20]:
+                        st.markdown(
+                            f"- `{c['code']}` · {c['used_count']}/{c['max_uses']} 사용 · "
+                            f"{c['note'] or '메모 없음'}"
+                        )
 
     # 새 프로젝트 생성
     with st.expander("➕ 새 프로젝트 만들기", expanded=not bool(project_store.list_projects())):
