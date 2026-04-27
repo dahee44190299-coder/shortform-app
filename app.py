@@ -16,6 +16,7 @@ import constants
 import use_cases
 import script_judge
 import whitelist
+import admin_dashboard
 from constants import (
     TEMPLATES, CATEGORY_HASHTAGS, COMMON_HASHTAGS,
     BGM_CATEGORY_KEYWORDS, PEXELS_CATEGORY_KEYWORDS,
@@ -338,66 +339,22 @@ def render_project_select():
 
     st.markdown('<div class="ux-card"><div class="ux-card-title">HOME</div><h4>📁 프로젝트 선택</h4><p class="ux-sub">프로젝트를 선택하거나 새로 만들어주세요</p></div>', unsafe_allow_html=True)
 
-    # ── 🎫 사용자 티어 + 초대 코드 (Phase 4 무료 티어) ──
-    with st.expander("🎫 내 티어 + 초대 코드", expanded=False):
-        _uid = st.text_input(
-            "내 user_id (이메일 또는 별명)",
-            value=st.session_state.get("user_id", ""),
-            key="_user_id_input",
-            help="founder/초대받은 사용자는 영구 무료. 일반 사용자는 Free 티어로 시작.",
-        )
-        if _uid != st.session_state.get("user_id", ""):
-            st.session_state.user_id = _uid
-
-        _tier = whitelist.user_tier(_uid)
-        _tier_label = {
-            "founder": "👑 Founder (모든 기능 영구 무료)",
-            "invitee": "✨ Invitee (초대받은 사용자, 영구 무료)",
-            "pro": "💎 Pro (유료 구독자)",
-            "free": "🆓 Free (제한 있음)",
-        }.get(_tier, "🆓 Free")
-        st.markdown(f"**현재 티어**: {_tier_label}")
-
-        if _tier == "free":
+    # ── 🎫 일반 사용자용 초대 코드 입력 (Free 티어만 노출) ──
+    _curr_uid = st.session_state.get("user_id", "")
+    _curr_tier = whitelist.user_tier(_curr_uid) if _curr_uid else "free"
+    if _curr_uid and _curr_tier == "free":
+        with st.expander("🎟️ 초대 코드 등록 (있다면)"):
             _code_input = st.text_input(
-                "초대 코드 입력 (받았다면)",
-                placeholder="INV-XXXX-XXXX",
+                "초대 코드", placeholder="INV-XXXX-XXXX",
                 key="_invite_code_input",
             )
-            if st.button("🎟️ 코드 등록", key="btn_redeem"):
-                _result = whitelist.redeem_invite_code(_code_input.strip(), _uid)
+            if st.button("등록", key="btn_redeem"):
+                _result = whitelist.redeem_invite_code(_code_input.strip(), _curr_uid)
                 if _result["ok"]:
                     st.success(f"✅ {_result['reason']}")
                     st.rerun()
                 else:
                     st.error(f"❌ {_result['reason']}")
-
-        if _tier == "founder":
-            st.caption("👑 Founder 권한 — 초대 코드 발급 가능")
-            _fc1, _fc2 = st.columns([3, 1])
-            with _fc1:
-                _note = st.text_input("발급 메모 (선택)", placeholder="예: 베타 사용자 김XX",
-                                       key="_invite_note")
-            with _fc2:
-                if st.button("🎫 코드 발급", key="btn_gen_invite", type="primary"):
-                    _new_code = whitelist.generate_invite_code(
-                        created_by=_uid, note=_note, max_uses=1
-                    )
-                    st.session_state["_last_invite_code"] = _new_code
-                    st.rerun()
-
-            if st.session_state.get("_last_invite_code"):
-                st.code(st.session_state["_last_invite_code"], language="")
-                st.caption("위 코드를 사용자에게 전달하세요. 1회 사용 후 만료.")
-
-            _codes = whitelist.list_invite_codes()
-            if _codes:
-                with st.expander(f"📋 발급 이력 ({len(_codes)}건)"):
-                    for c in _codes[:20]:
-                        st.markdown(
-                            f"- `{c['code']}` · {c['used_count']}/{c['max_uses']} 사용 · "
-                            f"{c['note'] or '메모 없음'}"
-                        )
 
     # 새 프로젝트 생성
     with st.expander("➕ 새 프로젝트 만들기", expanded=not bool(project_store.list_projects())):
@@ -4395,9 +4352,58 @@ CLOVA_TTS_CLIENT_SECRET = "..."
 
 
 # ═════════════════════════════════════════════════════════════════
-# 라우팅: app_phase → project_select / template_select / pipeline
+# 사이드바 — 사용자 식별 + 관리자 메뉴 (Founder만)
 # ═════════════════════════════════════════════════════════════════
-if st.session_state.app_phase == "project_select":
+with st.sidebar:
+    st.markdown("### 👤 내 계정")
+    _sb_uid = st.text_input(
+        "user_id (이메일)",
+        value=st.session_state.get("user_id", ""),
+        key="_sidebar_user_id",
+        placeholder="you@example.com",
+        help="처음 입력한 사람이 자동으로 Founder가 됩니다.",
+    )
+    if _sb_uid != st.session_state.get("user_id", ""):
+        st.session_state.user_id = _sb_uid
+
+    # 첫 사용자 자동 founder claim (file에 founder 없을 때)
+    if _sb_uid and not whitelist._load_founders_file().get("founders"):
+        _claim = whitelist.claim_first_founder(_sb_uid)
+        if _claim["ok"]:
+            st.success(f"👑 첫 Founder로 등록되었습니다: {_sb_uid}")
+
+    if _sb_uid:
+        _tier = whitelist.user_tier(_sb_uid)
+        _tier_emoji = {
+            "founder": "👑 Founder",
+            "invitee": "✨ Invitee",
+            "pro": "💎 Pro",
+            "free": "🆓 Free",
+        }.get(_tier, "🆓 Free")
+        st.caption(f"티어: {_tier_emoji}")
+
+        if _tier == "founder":
+            st.markdown("---")
+            st.markdown("### 👑 관리자")
+            if st.button("🏠 영상 작업으로", key="_sb_to_app", use_container_width=True):
+                st.session_state.app_phase = "project_select"
+                st.rerun()
+            if st.button("📊 관리자 페이지", key="_sb_to_admin", use_container_width=True):
+                st.session_state.app_phase = "admin"
+                st.rerun()
+
+
+# ═════════════════════════════════════════════════════════════════
+# 라우팅: app_phase → project_select / template_select / pipeline / admin
+# ═════════════════════════════════════════════════════════════════
+if st.session_state.app_phase == "admin":
+    if whitelist.is_founder(st.session_state.get("user_id", "")):
+        admin_dashboard.render_admin_page(st)
+    else:
+        st.error("관리자 페이지는 Founder만 접근할 수 있습니다.")
+        st.session_state.app_phase = "project_select"
+        st.rerun()
+elif st.session_state.app_phase == "project_select":
     render_project_select()
 elif st.session_state.app_phase == "template_select":
     render_template_select()

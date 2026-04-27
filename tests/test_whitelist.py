@@ -8,7 +8,11 @@ import whitelist
 def isolated_whitelist(tmp_path, monkeypatch):
     """각 테스트가 별도 임시 파일."""
     fake = tmp_path / "shortform_projects" / "_whitelist.json"
+    fake_founders = tmp_path / "shortform_projects" / "_founders.json"
     monkeypatch.setattr(whitelist, "WHITELIST_PATH", str(fake))
+    monkeypatch.setattr(whitelist, "FOUNDERS_PATH", str(fake_founders))
+    # DEFAULT_FOUNDER 폴백 비활성 (테스트 격리)
+    monkeypatch.setattr(whitelist, "DEFAULT_FOUNDER", "")
     yield fake
 
 
@@ -129,3 +133,65 @@ class TestIsProUser:
         assert whitelist.user_tier("founder@me.com", set()) == "founder"
         # 같은 사람이 paid에도 있으면 founder가 우선
         assert whitelist.user_tier("founder@me.com", {"founder@me.com"}) == "founder"
+
+
+# ── UI 등록 + first user claim (Phase 4 admin) ───────────────
+
+class TestAddRemoveFounder:
+    def test_add_founder(self, isolated_whitelist):
+        r = whitelist.add_founder("new@founder.com", added_by="ui",
+                                    note="테스트")
+        assert r["ok"] is True
+        assert whitelist.is_founder("new@founder.com") is True
+        # 중복 추가 방지
+        r2 = whitelist.add_founder("new@founder.com")
+        assert r2["ok"] is False
+
+    def test_remove_founder(self, isolated_whitelist):
+        whitelist.add_founder("f1@x.com")
+        whitelist.add_founder("f2@x.com")
+        assert whitelist.remove_founder("f1@x.com") is True
+        assert whitelist.is_founder("f1@x.com") is False
+
+    def test_cannot_remove_last_founder(self, isolated_whitelist):
+        # 마지막 founder 보호 (시스템 잠금 방지)
+        whitelist.add_founder("only@founder.com")
+        assert whitelist.remove_founder("only@founder.com") is False
+        assert whitelist.is_founder("only@founder.com") is True
+
+    def test_remove_nonexistent(self, isolated_whitelist):
+        assert whitelist.remove_founder("nobody@x.com") is False
+
+
+class TestClaimFirstFounder:
+    def test_claim_when_empty(self, isolated_whitelist):
+        r = whitelist.claim_first_founder("first@user.com")
+        assert r["ok"] is True
+        assert whitelist.is_founder("first@user.com") is True
+
+    def test_no_claim_if_founder_exists(self, isolated_whitelist):
+        whitelist.add_founder("existing@x.com")
+        r = whitelist.claim_first_founder("second@user.com")
+        assert r["ok"] is False
+        assert whitelist.is_founder("second@user.com") is False
+
+    def test_no_claim_with_empty_id(self, isolated_whitelist):
+        r = whitelist.claim_first_founder("")
+        assert r["ok"] is False
+
+    def test_disabled_via_flag(self, isolated_whitelist, monkeypatch):
+        monkeypatch.setattr(whitelist, "ALLOW_FIRST_USER_CLAIM", False)
+        r = whitelist.claim_first_founder("first@user.com")
+        assert r["ok"] is False
+
+
+class TestListFounders:
+    def test_list_includes_file_founders(self, isolated_whitelist):
+        whitelist.add_founder("a@x.com", note="첫번째")
+        whitelist.add_founder("b@x.com", note="두번째")
+        founders = whitelist.list_founders()
+        emails = {f["user_id"] for f in founders}
+        assert {"a@x.com", "b@x.com"}.issubset(emails)
+        # source 필드
+        for f in founders:
+            assert "source" in f
