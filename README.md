@@ -10,17 +10,52 @@
 
 ```
 shortform_app/
-├── app.py                  # 메인 앱 (4,300+ lines) — UI + 영상 파이프라인 전체
-├── clip_analyzer.py        # FFmpeg 장면 감지 + 자동 클립 분할
-├── project_store.py        # 프로젝트 저장 레이어 (JSON 파일 기반)
-├── requirements.txt        # Python 패키지 의존성
-├── packages.txt            # Streamlit Cloud 시스템 패키지 (fonts-nanum, ffmpeg)
-├── secrets_template.toml   # API 키 설정 템플릿
-├── .gitignore
-└── shortform_projects/     # 프로젝트 데이터 저장 디렉토리
+├── app.py                       # 메인 앱 (Streamlit UI + 파이프라인)
+├── clip_analyzer.py             # FFmpeg 장면 감지 + 자동 클립 분할
+│
+├── project_store.py             # 저장소 facade (env로 JSON/SQLite 백엔드 선택)
+├── project_store_sqlite.py      # SQLite 백엔드 (Phase 2 멀티유저/분석)
+│
+├── api_keys.py                  # API 키 액세스 (Streamlit secrets + env 폴백)
+├── llm.py                       # call_claude (Anthropic) + 자동 메트릭 로깅
+├── stock_video.py               # Pexels + YouTube + yt-dlp 검색
+├── tracking.py                  # 쿠팡 추적 링크 (subId/deeplink)
+├── category_templates.py        # 카테고리별 검증된 Hook/구조/CTA
+├── regeneration.py              # 저성과 영상 자동 감지 + 재생성 추천
+├── eval_metrics.py              # LLM 호출 편차 측정 (JSONL 누적)
+├── constants.py                 # TEMPLATES, CTA_LIBRARY 등 상수 데이터
+│
+├── run_eval.py                  # 카테고리 추론 정확도 평가 CLI
+├── eval_data/eval_cases.json    # 50 케이스 평가 데이터셋
+├── tests/                       # 87 unit tests + 2 e2e (수동)
+├── .github/workflows/tests.yml  # CI: pytest + 카테고리 정확도 게이트
+│
+├── requirements.txt
+├── packages.txt
+├── pytest.ini
+└── shortform_projects/          # 프로젝트 데이터
+    ├── projects.db              # SQLite (SHORTFORM_DB=sqlite 시)
+    ├── _metrics/llm_calls.jsonl # LLM 호출 로그
     └── {project_id}/
-        └── project.json    # 프로젝트 메타 + 비디오 버전 목록
+        └── project.json         # JSON 백엔드 (기본)
 ```
+
+### 저장 백엔드 전환 (JSON → SQLite)
+
+```bash
+# 1) 기존 JSON 데이터 마이그레이션 (idempotent — 여러 번 실행 OK)
+python project_store.py
+
+# 2) 환경변수로 SQLite 활성화
+# Linux/Mac:
+export SHORTFORM_DB=sqlite
+# Windows PowerShell:
+$env:SHORTFORM_DB = "sqlite"
+
+# 3) 앱 재시작
+streamlit run app.py
+```
+SQLite는 멀티유저 동시 접근 + SQL 집계 + 트랜잭션을 제공합니다 (Phase 2 데이터 해자의 인프라).
 
 ---
 

@@ -44,6 +44,16 @@ from pathlib import Path
 
 PROJECTS_DIR = "shortform_projects"
 
+# ── 백엔드 선택 (Phase 2 SQLite 마이그레이션) ─────────────────────
+# 환경변수 SHORTFORM_DB=sqlite 면 모든 호출을 project_store_sqlite로 위임.
+# 기본값은 JSON (하위 호환). 마이그레이션은 migrate_json_to_sqlite() 사용.
+_USE_SQLITE = os.getenv("SHORTFORM_DB", "").lower() == "sqlite"
+
+if _USE_SQLITE:
+    import project_store_sqlite as _sqlite
+    # PROJECTS_DIR을 양쪽 모듈에 동기화 (테스트 격리용)
+    _sqlite.PROJECTS_DIR = PROJECTS_DIR
+
 
 def _ensure_projects_dir():
     os.makedirs(PROJECTS_DIR, exist_ok=True)
@@ -254,3 +264,128 @@ def list_all_tracking_records():
             r2["project_name"] = p.get("name", "")
             out.append(r2)
     return out
+
+
+# ── SQLite 백엔드 위임 (활성화 시 위 JSON 함수들을 덮어씀) ──────────
+if _USE_SQLITE:
+    list_projects = _sqlite.list_projects
+    create_project = _sqlite.create_project
+    get_project = _sqlite.get_project
+    update_project = _sqlite.update_project
+    delete_project = _sqlite.delete_project
+    add_video_version = _sqlite.add_video_version
+    list_video_versions = _sqlite.list_video_versions
+    get_video_version = _sqlite.get_video_version
+    mark_downloaded = _sqlite.mark_downloaded
+    add_tracking_record = _sqlite.add_tracking_record
+    list_tracking_records = _sqlite.list_tracking_records
+    update_tracking_metrics = _sqlite.update_tracking_metrics
+    list_all_tracking_records = _sqlite.list_all_tracking_records
+
+
+# ── JSON → SQLite 마이그레이션 ─────────────────────────────────────
+
+def migrate_json_to_sqlite(verbose: bool = True) -> dict:
+    """기존 JSON 파일들을 읽어 SQLite DB에 일괄 이전.
+
+    - 같은 ID 프로젝트가 SQLite에 이미 있으면 건너뜀 (idempotent)
+    - 추적 레코드/비디오 버전도 함께 이전
+    - 실행 후에도 JSON 파일은 보존 (롤백 가능)
+
+    Returns: {"projects": N, "videos": N, "tracking": N, "skipped": N}
+    """
+    import project_store_sqlite as sqlite_mod
+    sqlite_mod.PROJECTS_DIR = PROJECTS_DIR  # 동기화
+
+    stats = {"projects": 0, "videos": 0, "tracking": 0, "skipped": 0}
+    if not os.path.exists(PROJECTS_DIR):
+        return stats
+
+    for name in sorted(os.listdir(PROJECTS_DIR)):
+        pj = os.path.join(PROJECTS_DIR, name, "project.json")
+        if not os.path.isfile(pj):
+            continue
+        try:
+            with open(pj, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            continue
+
+        pid = data.get("id") or name
+        # 중복 체크
+        if sqlite_mod.get_project(pid):
+            stats["skipped"] += 1
+            if verbose:
+                print(f"  SKIP {pid} (이미 존재)")
+            continue
+
+        # 1) 프로젝트 자체 INSERT (시퀀스 ID 보존을 위해 SQL 직접)
+        with sqlite_mod._conn() as c:
+            sqlite_mod._init_schema()
+            c.execute("""
+                INSERT INTO projects (id, name, product_name, category, template, workspace_id, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                pid, data.get("name", name),
+                data.get("product_name", ""), data.get("category", ""),
+                data.get("template", ""), data.get("workspace_id", ""),
+                data.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
+            ))
+            stats["projects"] += 1
+
+            # 2) 비디오 버전
+            for v in data.get("videos", []):
+                c.execute("""
+                    INSERT INTO videos (version_id, project_id, name, hook_type,
+                                         pattern_interrupt_enabled, retention_booster_enabled,
+                                         tts_engine, video_path, downloaded, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    v.get("version_id"), pid, v.get("name", ""),
+                    v.get("hook_type", ""),
+                    int(v.get("pattern_interrupt_enabled", True)),
+                    int(v.get("retention_booster_enabled", True)),
+                    v.get("tts_engine", "elevenlabs"),
+                    v.get("video_path", ""),
+                    int(v.get("downloaded", False)),
+                    v.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
+                ))
+                stats["videos"] += 1
+
+            # 3) 추적 레코드
+            for r in data.get("tracking", []):
+                c.execute("""
+                    INSERT OR REPLACE INTO tracking_records (
+                        project_id, video_id, sub_id, shorten_url, landing_url,
+                        original_url, template, title,
+                        manual_clicks, manual_revenue_krw, uploaded_to, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    pid, r.get("video_id", ""),
+                    r.get("sub_id", ""), r.get("shorten_url", ""),
+                    r.get("landing_url", ""), r.get("original_url", ""),
+                    r.get("template", ""), r.get("title", ""),
+                    int(r.get("manual_clicks", 0) or 0),
+                    int(r.get("manual_revenue_krw", 0) or 0),
+                    json.dumps(r.get("uploaded_to", []), ensure_ascii=False),
+                    r.get("created_at", time.strftime("%Y-%m-%dT%H:%M:%S")),
+                ))
+                stats["tracking"] += 1
+
+        if verbose:
+            print(f"  MIGRATE {pid}: videos={len(data.get('videos', []))} "
+                  f"tracking={len(data.get('tracking', []))}")
+    return stats
+
+
+if __name__ == "__main__":
+    # CLI: python project_store.py
+    print("=== JSON → SQLite 마이그레이션 ===")
+    print(f"PROJECTS_DIR: {PROJECTS_DIR}")
+    print(f"SQLite DB: {os.path.join(PROJECTS_DIR, 'projects.db')}\n")
+    result = migrate_json_to_sqlite(verbose=True)
+    print(f"\n완료: 프로젝트 {result['projects']}, 비디오 {result['videos']}, "
+          f"추적 {result['tracking']} (스킵 {result['skipped']})")
+    print("\n전환:")
+    print('  Linux/Mac: export SHORTFORM_DB=sqlite')
+    print('  Windows:   set SHORTFORM_DB=sqlite')
