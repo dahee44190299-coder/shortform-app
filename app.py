@@ -211,6 +211,7 @@ st.markdown("""
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
 :root{
+  /* Linear/Synthesia 톤 — 단색 팔레트 (3색만) */
   --bg: #0A0A0F;
   --bg-elevated: #13131A;
   --surface: #1A1A23;
@@ -220,11 +221,9 @@ st.markdown("""
   --text: #F4F4F8;
   --text-muted: #9CA3AF;
   --text-dim: #6B7280;
+  /* 단 1개 primary, 시맨틱 색은 호환용으로만 */
   --primary: #FF6B35;
-  --primary-glow: #FF8B5B;
-  --accent-pink: #FF1493;
-  --accent-cyan: #06B6D4;
-  --accent-purple: #A855F7;
+  --primary-hover: #E55A2B;
   --success: #10B981;
   --warning: #F59E0B;
   --error: #EF4444;
@@ -2709,55 +2708,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── 사이드바 ──────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### 🎬 Shorts AI")
-    st.markdown("---")
-
-    # 프로젝트 정보 표시 (활성 프로젝트가 있을 때)
-    if st.session_state.active_project_id:
-        _prj_data = project_store.get_project(st.session_state.active_project_id)
-        if _prj_data:
-            st.markdown(f"📁 **{_prj_data['name']}**")
-            _active_tpl = TEMPLATES.get(st.session_state.active_template, {})
-            if _active_tpl:
-                st.caption(f"📋 {_active_tpl.get('name', '')}")
-        if st.button("🏠 프로젝트 목록", key="sidebar_home", use_container_width=True):
-            st.session_state.app_phase = "project_select"
-            st.rerun()
-        st.markdown("---")
-
-    # STEP 네비게이션은 pipeline 단계에서만 표시
-    if st.session_state.app_phase == "pipeline":
-        _step_labels = ["1. 소스 선택", "2. 클립 편집", "3. 자막 + 음성", "4. 미리보기 + 다운로드"]
-        _cs = st.session_state.current_step
-        _sidebar_css = '<style>'
-        for _si in range(4):
-            if _si + 1 == _cs:
-                _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}){{background:#FF6B35!important;border-radius:8px;}} [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span{{color:#fff!important;font-weight:700!important;}}'
-            elif _si + 1 < _cs:
-                _sidebar_css += f'[data-testid="stSidebar"] .stRadio div[role="radiogroup"] label:nth-child({_si+1}) span::before{{content:"✅ ";}}'
-        _sidebar_css += '</style>'
-        st.markdown(_sidebar_css, unsafe_allow_html=True)
-        _selected_step = st.radio("제작 단계", _step_labels,
-                                  index=st.session_state.current_step - 1)
-        st.session_state.current_step = _step_labels.index(_selected_step) + 1
-        st.markdown("---")
-        with st.expander("✂️ 영상 설정", expanded=False):
-            target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5, key="_w_target_dur")
-            crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"], key="_w_crop_ratio")
-        st.markdown("---")
-
-    with st.expander("🔑 API 연결 상태"):
-        for label, env in [
-            ("Claude AI", "ANTHROPIC_API_KEY"),
-            ("클로바 TTS", "CLOVA_TTS_CLIENT_ID"),
-            ("ElevenLabs", "ELEVENLABS_API_KEY"),
-            ("Pexels 검색", "PEXELS_API_KEY"),
-            ("Pixabay BGM", "PIXABAY_API_KEY"),
-            ("YouTube 검색", "YOUTUBE_API_KEY"),
-        ]:
-            ok = has_key(env)
-            st.markdown(f"{'✅' if ok else '⬜'} **{label}** {'연결됨' if ok else '미연결'}")
+# (구 사이드바 제거 — 아래 두 번째 사이드바로 통합됨)
+# 단, 영상 설정 슬라이더 값은 st.session_state로 보존 (default 사용)
+target_dur = st.session_state.get("_w_target_dur", 30)
+crop_ratio = st.session_state.get("_w_crop_ratio", "9:16 세로형 (숏폼)")
 
 # ── 스텝 진행 표시 (4단계 동적) — pipeline 단계에서만 ─────────────
 if st.session_state.app_phase == "pipeline":
@@ -5524,20 +5478,30 @@ with st.sidebar:
     else:
         st.caption("프로젝트를 선택/생성하면 STEP 메뉴가 활성화됩니다.")
 
+    # 관리자 + YouTube 연동 + 설정 모두 expander로 (사이드바 단순화)
+    st.markdown("---")
     if _sb_uid and whitelist.is_founder(_sb_uid):
-        st.markdown("---")
-        st.markdown("### 👑 관리자")
         if st.button("📊 관리자 페이지", key="_sb_to_admin", use_container_width=True):
             st.session_state.app_phase = "admin"
             st.rerun()
 
-    # ── 📺 YouTube 자동 업로드 인증 ──
-    st.markdown("---")
-    st.markdown("### 📺 YouTube 연동")
+    with st.expander("⚙️ 더보기"):
+        # 영상 설정
+        target_dur = st.slider("목표 길이(초)", 15, 60, 30, 5, key="_w_target_dur")
+        crop_ratio = st.selectbox("화면 비율", ["9:16 세로형 (숏폼)", "1:1 정방형"], key="_w_crop_ratio")
+        st.markdown("---")
+        # API 상태
+        st.caption("🔑 API")
+        for label, env in [("Claude", "ANTHROPIC_API_KEY"), ("Pexels", "PEXELS_API_KEY"),
+                            ("ElevenLabs", "ELEVENLABS_API_KEY")]:
+            ok = has_key(env)
+            st.caption(f"{'✅' if ok else '⬜'} {label}")
+
+    # ── 📺 YouTube 연동 (expander로) ──
     _yt_authed = youtube_uploader.is_authenticated()
     if _yt_authed:
-        st.success("✅ YouTube 연결됨", icon="🎬")
-        if st.button("🚪 로그아웃", key="_yt_logout", use_container_width=True):
+        st.caption("🎬 YouTube 연결됨")
+        if st.button("로그아웃", key="_yt_logout", use_container_width=True):
             youtube_uploader.revoke_token()
             st.rerun()
     else:
@@ -5610,20 +5574,20 @@ elif st.session_state.app_phase == "pipeline":
                   'overflow-x:auto;padding:4px 0;">')
     for _n, _emoji, _label, _sub in _steps_meta:
         if _n == _visual_step:
-            _bg = "linear-gradient(135deg,#FF6B35 0%,#F7931E 100%)"
+            _bg = "#FF6B35"
             _fg = "#fff"
-            _border = "transparent"
-            _shadow = "0 6px 16px rgba(255,107,53,.35)"
+            _border = "#FF6B35"
+            _shadow = "none"
             _opacity = "1"
         elif _n < _visual_step:
-            _bg = "linear-gradient(135deg,#10B981 0%,#059669 100%)"
-            _fg = "#fff"
-            _border = "transparent"
-            _shadow = "0 2px 6px rgba(16,185,129,.2)"
-            _opacity = "0.85"
-        else:
             _bg = "#1A1A23"
-            _fg = "#9CA3AF"
+            _fg = "#10B981"
+            _border = "#10B981"
+            _shadow = "none"
+            _opacity = "1"
+        else:
+            _bg = "#13131A"
+            _fg = "#6B7280"
             _border = "#2A2A35"
             _shadow = "none"
             _opacity = "1"
