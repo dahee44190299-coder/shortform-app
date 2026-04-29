@@ -19,6 +19,8 @@ import script_prompts
 import viral_patterns
 import whitelist
 import admin_dashboard
+import youtube_uploader
+import competitor_dna
 from constants import (
     TEMPLATES, CATEGORY_HASHTAGS, COMMON_HASHTAGS,
     BGM_CATEGORY_KEYWORDS, PEXELS_CATEGORY_KEYWORDS,
@@ -2877,6 +2879,46 @@ def render_step1():
         unsafe_allow_html=True,
     )
 
+    # ── 🧬 경쟁사 영상 DNA 추출 (USP — 다른 도구에 없음) ──
+    with st.expander("🧬 잘 된 영상 URL → DNA 추출 (이렇게 만들기)"):
+        st.caption("YouTube/TikTok/Instagram에서 잘 된 영상 URL을 입력하면 "
+                   "Hook/구조/CTA를 분석해서 본인 상품 대본에 적용합니다.")
+        _dna_url = st.text_input(
+            "경쟁사 영상 URL", placeholder="https://youtube.com/shorts/...",
+            key="_dna_url_input", label_visibility="collapsed",
+        )
+        if st.button("🧬 DNA 분석", key="btn_dna_extract"):
+            with st.spinner("영상 메타 + 자막 가져오는 중..."):
+                _meta = competitor_dna.fetch_video_metadata(_dna_url)
+            if _meta.get("ok"):
+                with st.spinner("LLM이 viral 요소 분해 중..."):
+                    _dna = competitor_dna.extract_dna(_meta)
+                competitor_dna.save_dna(_dna_url, _meta, _dna,
+                                          st.session_state.get("coupang_product", ""))
+                st.session_state["_last_dna"] = _dna
+                st.session_state["_last_dna_meta"] = _meta
+            else:
+                st.error(f"❌ {_meta.get('error', '실패')}")
+
+        _dna = st.session_state.get("_last_dna")
+        _meta = st.session_state.get("_last_dna_meta")
+        if _dna and _meta:
+            st.markdown(
+                f'<div style="background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.3);'
+                f'border-radius:10px;padding:12px;margin:8px 0;">'
+                f'<div style="font-size:.85rem;font-weight:700;color:#FF8B5B;margin-bottom:6px;">'
+                f'🧬 분석된 DNA</div>'
+                f'<div style="font-size:.82rem;color:#E5E5EB;line-height:1.6;">'
+                f'• Hook 패턴: <strong>{_dna.get("hook_pattern", "")}</strong><br>'
+                f'• 구조: {_dna.get("structure", "")}<br>'
+                f'• CTA: {_dna.get("cta_pattern", "")}<br>'
+                f'• 작동 요소: {", ".join(_dna.get("viral_factors", [])[:3])}<br>'
+                f'• 조회수: {_meta.get("view_count", 0):,} · 좋아요: {_meta.get("like_count", 0):,}'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+            st.caption("💡 STEP 3 대본 생성 시 이 DNA가 자동 적용됩니다.")
+
     # ── 쿠팡 앱 공유 텍스트 자동 파싱 (가장 빠른 입력 방법) ──
     st.markdown("##### 📱 쿠팡 앱 '공유' 텍스트 붙여넣기 <span style='font-size:.7rem;color:#10B981;font-weight:600;'>가장 빠름</span>",
                 unsafe_allow_html=True)
@@ -5388,6 +5430,37 @@ with st.sidebar:
         if st.button("📊 관리자 페이지", key="_sb_to_admin", use_container_width=True):
             st.session_state.app_phase = "admin"
             st.rerun()
+
+    # ── 📺 YouTube 자동 업로드 인증 ──
+    st.markdown("---")
+    st.markdown("### 📺 YouTube 연동")
+    _yt_authed = youtube_uploader.is_authenticated()
+    if _yt_authed:
+        st.success("✅ YouTube 연결됨", icon="🎬")
+        if st.button("🚪 로그아웃", key="_yt_logout", use_container_width=True):
+            youtube_uploader.revoke_token()
+            st.rerun()
+    else:
+        with st.expander("🔐 YouTube 연결하기"):
+            st.caption("Google Cloud Console에서 OAuth Client ID 발급 후 secrets에 추가하세요.")
+            if st.button("1. 인증 URL 열기", key="_yt_auth_step1", use_container_width=True):
+                _r = youtube_uploader.get_auth_url()
+                if _r["ok"]:
+                    st.session_state["_yt_auth_url"] = _r["auth_url"]
+                else:
+                    st.error(_r["error"])
+            if st.session_state.get("_yt_auth_url"):
+                st.markdown(f"[👉 클릭해서 Google 로그인]({st.session_state['_yt_auth_url']})")
+                _yt_code = st.text_input("2. 받은 인증 코드 붙여넣기", key="_yt_code_input")
+                if st.button("3. 등록 완료", key="_yt_auth_step3", type="primary",
+                              use_container_width=True):
+                    _r = youtube_uploader.exchange_code(_yt_code)
+                    if _r["ok"]:
+                        st.success("✅ 등록 완료!")
+                        st.session_state.pop("_yt_auth_url", None)
+                        st.rerun()
+                    else:
+                        st.error(_r["error"])
 
 
 # ═════════════════════════════════════════════════════════════════
