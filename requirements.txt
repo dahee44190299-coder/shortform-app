@@ -8,3 +8,5 @@ yt-dlp>=2024.0.0
 douyin-tiktok-scraper
 edge-tts>=6.1.0
 pytest>=8.0.0
+google-api-python-client>=2.100.0
+google-auth-oauthlib>=1.2.0
