@@ -3158,10 +3158,10 @@ def render_step1():
         st.markdown('<span class="badge badge-green">✓ 링크 등록됨</span>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── 제품 이미지 (썸네일/오버레이용) ──
-    st.markdown("#### 🖼️ 제품 이미지 (썸네일/오버레이용)")
-    st.caption("제품 이미지는 자막 오버레이 및 썸네일 생성에 활용됩니다.")
-    uploaded_imgs = st.file_uploader("이미지 업로드 (여러 개 가능)", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True, key="img_uploader")
+    # ── 제품 이미지 (썸네일/오버레이용) — 접기 ──
+    with st.expander("🖼️ 제품 이미지 업로드 (선택 · 썸네일/오버레이용)"):
+        st.caption("제품 이미지는 자막 오버레이 및 썸네일 생성에 활용됩니다.")
+        uploaded_imgs = st.file_uploader("이미지 업로드 (여러 개 가능)", type=["jpg", "jpeg", "png", "webp"], accept_multiple_files=True, key="img_uploader", label_visibility="collapsed")
     if uploaded_imgs:
         img_dir = _ensure_dir("uploaded_images")
         local_paths = []
@@ -3215,7 +3215,18 @@ def render_step1():
     # ╔══════════════════════════════════════════════════════════╗
     # ║ 블록 2: 🎬 영상 확보                                      ║
     # ╚══════════════════════════════════════════════════════════╝
-    st.markdown("## 🎬 블록 2 — 영상 확보")
+    # ── 영상 확보 (단순 안내) ──
+    st.markdown("##### 🎬 영상 확보")
+    st.markdown(
+        '<div style="background:rgba(255,107,53,.08);border-left:3px solid #FF6B35;'
+        'padding:12px 16px;border-radius:8px;margin:8px 0 16px;font-size:.92rem;">'
+        '💡 <strong>가장 빠른 방법</strong>: <strong>🎬 Pexels 배경 영상</strong> 라디오 선택 → '
+        '카테고리 키워드 자동 검색 → 클릭 한 번으로 추가됨. 무료.<br>'
+        '<span style="opacity:.7;font-size:.85rem;">'
+        '본인 영상이 있으면 "🎥 직접 업로드", 다른 SNS 영상은 "🌐 외부 URL"</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
     # ═══════ 추천 영상 찾기 (7차) ═══════
     _rec_pn = (st.session_state.get("_w_pname", "") or st.session_state.get("_saved_pname", "") or st.session_state.coupang_product or "")
@@ -3669,7 +3680,11 @@ def render_step1():
     # ║ 블록 3: 🔧 참고 도구                                      ║
     # ╚══════════════════════════════════════════════════════════╝
     st.markdown("---")
-    st.markdown("## 🔧 블록 3 — 참고 도구")
+    # ── 참고 도구 (선택사항) ──
+    st.markdown("---")
+    st.markdown("##### 🔧 참고 도구 <span style='font-size:.7rem;color:#9CA3AF;'>선택사항</span>",
+                unsafe_allow_html=True)
+    st.caption("Pexels 검색, YouTube/Instagram/타오바오 트렌드 참고. 영상 확보가 끝났으면 STEP 3으로 넘어가세요.")
 
     # ── ① Pexels 직접 키워드 검색 + AI 추천 ──
     st.markdown("### 🎬 Pexels 배경 영상 검색")
