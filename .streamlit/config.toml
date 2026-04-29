@@ -12,10 +12,12 @@ enableCORS = false
 gatherUsageStats = false  # Streamlit 사용통계 비활성화 (개인정보 보호)
 
 [theme]
-primaryColor = "#FF6B35"             # 주황 (쿠팡 브랜드와 호환)
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F8F9FA"
-textColor = "#1F2937"
+# Runway/Pika 다크 테마
+base = "dark"
+primaryColor = "#FF6B35"             # 주황 액센트
+backgroundColor = "#0A0A0F"          # 진짜 다크 (검정에 가까운 보라)
+secondaryBackgroundColor = "#13131A"  # 카드 배경
+textColor = "#F4F4F8"
 font = "sans serif"
 
 [runner]
