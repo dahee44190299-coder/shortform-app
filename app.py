@@ -230,36 +230,41 @@ st.markdown("""
   --error: #EF4444;
 }
 
-/* 글로벌 다크 — Runway 스타일 + 큰 폰트 */
+/* 글로벌 다크 — 큰 가독성 폰트 (17px 기준) */
 html, body, [class*="css"]{
   font-family: 'Pretendard', -apple-system, sans-serif !important;
   background: #0A0A0F !important;
   color: #F4F4F8 !important;
-  font-size: 16px !important;  /* 기본 폰트 크기 키움 (이전 14px) */
+  font-size: 17px !important;  /* 기본 17px (이전 16px) */
+  line-height: 1.6 !important;
 }
 .stApp{ background: #0A0A0F !important; color: #F4F4F8 !important; }
 .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{ color: #F4F4F8 !important; }
-.stApp h1{ font-size: 2rem !important; font-weight: 800 !important; }
-.stApp h2{ font-size: 1.5rem !important; font-weight: 700 !important; }
-.stApp h3{ font-size: 1.2rem !important; font-weight: 700 !important; }
-.stApp h4{ font-size: 1.05rem !important; font-weight: 700 !important; }
-.stApp h5{ font-size: 0.95rem !important; font-weight: 600 !important; }
-.stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; font-size: 0.95rem !important; }
-.stApp p{ line-height: 1.6 !important; }
-.stMarkdown, .stMarkdown p{ color: #E5E5EB !important; font-size: 0.95rem !important; }
+.stApp h1{ font-size: 2.25rem !important; font-weight: 800 !important; line-height: 1.2 !important; }
+.stApp h2{ font-size: 1.65rem !important; font-weight: 700 !important; line-height: 1.25 !important; }
+.stApp h3{ font-size: 1.3rem !important; font-weight: 700 !important; line-height: 1.3 !important; }
+.stApp h4{ font-size: 1.15rem !important; font-weight: 700 !important; line-height: 1.35 !important; }
+.stApp h5{ font-size: 1.02rem !important; font-weight: 600 !important; line-height: 1.4 !important; }
+.stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; font-size: 1rem !important; }
+.stApp p{ line-height: 1.65 !important; }
+.stMarkdown, .stMarkdown p{ color: #E5E5EB !important; font-size: 1rem !important; }
+/* caption 약간 작지만 여전히 읽기 쉽게 */
+.stApp [data-testid="stCaptionContainer"], .stApp small{
+  font-size: 0.88rem !important; color: #B8B8C8 !important;
+}
 /* 입력 필드 폰트 */
 .stTextInput input, .stTextArea textarea, .stSelectbox > div > div{
-  font-size: 0.95rem !important;
+  font-size: 1rem !important; line-height: 1.5 !important;
 }
-/* 버튼 폰트 키움 */
-.stButton > button{ font-size: 0.95rem !important; padding: 12px 24px !important; }
-/* 컨테이너 패딩 — viewport 우선 */
+/* 버튼 폰트 */
+.stButton > button{ font-size: 1rem !important; padding: 12px 24px !important; }
+/* 컨테이너 패딩 — 와이드 + viewport 우선 */
 .main .block-container{
   padding-top: 1rem !important;
   padding-bottom: 2rem !important;
-  padding-left: 2rem !important;
-  padding-right: 2rem !important;
-  max-width: 1280px !important;
+  padding-left: 2.5rem !important;
+  padding-right: 2.5rem !important;
+  max-width: 1400px !important;
 }
 @media (max-width: 768px){
   html, body{ font-size: 15px !important; }
@@ -2800,6 +2805,91 @@ def _render_nav_buttons():
 # ═════════════════════════════════════════════════════════════════
 # render_step1: 🔍 소스 선택 (3블록 구조)
 # ═════════════════════════════════════════════════════════════════
+def render_preview_panel():
+    """STEP 진행 시 우측에 표시되는 미리보기 패널 (sticky).
+
+    현재 STEP에 따라 다른 정보 표시:
+    - STEP 1: 입력된 제품/카테고리/use case + DNA 결과
+    - STEP 2: 선택된 클립 수
+    - STEP 3: 생성된 대본 미리보기 + 점수
+    - STEP 4: 최종 영상 메타 + 추적 링크
+    """
+    st.markdown(
+        '<div style="position:sticky;top:1rem;background:linear-gradient(135deg,#13131A 0%,#1A1A23 100%);'
+        'border:1px solid #2A2A35;border-radius:14px;padding:18px;">'
+        '<div style="font-size:.7rem;font-weight:700;color:#FF6B35;'
+        'text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">'
+        '👁️ 미리보기</div>',
+        unsafe_allow_html=True,
+    )
+
+    _curr = st.session_state.get("current_step", 1)
+    _product = st.session_state.get("coupang_product", "")
+    _cat = st.session_state.get("coupang_category", "")
+    _uc = st.session_state.get("active_use_case", "coupang_affiliate")
+
+    try:
+        _uc_label = use_cases.get_use_case(_uc).get("label", "")
+    except Exception:
+        _uc_label = ""
+
+    # ── 공통: 현재 프로젝트 정보 ──
+    st.markdown(f"**Use Case**  \n{_uc_label or '미선택'}")
+    if _product:
+        st.markdown(f"**제품/주제**  \n{_product[:50]}")
+    if _cat:
+        st.markdown(f"**카테고리**  \n{_cat}")
+
+    # ── STEP별 정보 ──
+    if _curr == 1:
+        _dna = st.session_state.get("_last_dna")
+        if _dna:
+            st.markdown("---")
+            st.markdown(f"**🧬 DNA 적용 중**  \n{_dna.get('hook_pattern', '')}")
+        _share = st.session_state.get("_share_text_input", "")
+        if _share:
+            st.markdown(f"**📱 공유 텍스트**  \n{_share[:60]}...")
+    elif _curr == 2:
+        _clips = st.session_state.get("clips", [])
+        st.markdown(f"**선택된 클립**  \n{len(_clips)}개")
+    elif _curr == 3:
+        _judge = st.session_state.get("_last_judge", {})
+        if _judge.get("total"):
+            _score = _judge["total"]
+            _emoji = "🟢" if _score >= 85 else ("🟡" if _score >= 70 else "🔴")
+            st.markdown(f"**품질 점수**  \n{_emoji} {_score}/100")
+        _script = st.session_state.get("coupang_script", "")
+        if _script:
+            st.markdown("---")
+            st.markdown("**대본 미리보기**")
+            st.markdown(f'<div style="background:rgba(255,255,255,.04);border-radius:8px;'
+                        f'padding:10px;font-size:.85rem;color:#E5E5EB;max-height:200px;'
+                        f'overflow-y:auto;line-height:1.5;">{_script[:300]}{"..." if len(_script) > 300 else ""}'
+                        f'</div>', unsafe_allow_html=True)
+    elif _curr == 4:
+        _last_track = st.session_state.get("_last_tracking_record")
+        if _last_track:
+            st.markdown("---")
+            st.markdown(f"**🔗 추적 ID**  \n`{_last_track.get('sub_id', '')[:30]}`")
+            if _last_track.get("shorten_url"):
+                st.markdown(f"**단축 URL**  \n{_last_track['shorten_url'][:50]}")
+
+    # 빠른 네비
+    st.markdown("---")
+    st.markdown("**🧭 빠른 이동**")
+    _nav_cols = st.columns(4)
+    _step_emojis = ["🎯", "✂️", "🤖", "🔗"]
+    for _i, _e in enumerate(_step_emojis, 1):
+        with _nav_cols[_i - 1]:
+            if st.button(f"{_e}\n{_i}", key=f"_preview_step_{_i}",
+                          use_container_width=True,
+                          type="primary" if _i == _curr else "secondary"):
+                st.session_state.current_step = _i
+                st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_step1():
     # 통합 헤더 (STEP 표시 + 부제 한 카드)
     st.markdown(
@@ -5468,12 +5558,16 @@ elif st.session_state.app_phase == "pipeline":
     _step_html += '</div>'
     st.markdown(_step_html, unsafe_allow_html=True)
 
-    # ── STEP 라우팅 ──
-    if _curr == 1:
-        render_step1()
-    elif _curr == 2:
-        render_step2()
-    elif _curr == 3:
-        render_step3()
-    elif _curr == 4:
-        render_step4()
+    # ── STEP 좌우 분할 (작업 영역 + 미리보기) ──
+    _main_col, _preview_col = st.columns([2, 1], gap="large")
+    with _main_col:
+        if _curr == 1:
+            render_step1()
+        elif _curr == 2:
+            render_step2()
+        elif _curr == 3:
+            render_step3()
+        elif _curr == 4:
+            render_step4()
+    with _preview_col:
+        render_preview_panel()
