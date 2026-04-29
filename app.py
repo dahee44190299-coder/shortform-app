@@ -515,7 +515,56 @@ def render_project_select():
     if _all_track:
         st.markdown("---")
         st.markdown("#### 📊 추적 대시보드 — 영상별 매출 귀속")
-        st.caption("파트너스 대시보드에서 클릭/매출 확인 후 아래 표에 입력하세요. (영상이 매출을 냈는지 보이는 유일한 도구)")
+
+        # ── API 승인 전/후 안내 ──
+        _has_partners_api = has_key("COUPANG_PARTNERS_ACCESS_KEY") and has_key("COUPANG_PARTNERS_SECRET_KEY")
+        if not _has_partners_api:
+            st.markdown(
+                '<div style="background:linear-gradient(135deg,#FFF7ED 0%,#FED7AA 100%);'
+                'border:1px solid #FDBA74;border-radius:12px;padding:14px;margin:8px 0;'
+                'font-size:.88rem;color:#7C2D12;">'
+                '🚧 <strong>쿠팡 파트너스 API 미승인 단계</strong> — 자동 매출 회수 불가.<br>'
+                '대안: ① 영상마다 subId 다르게 해서 단축 링크 생성 → '
+                '② 7일 후 파트너스 리포트에서 subId별 매출 확인 → '
+                '③ <strong>아래 CSV 업로드</strong> 또는 표에 직접 입력.<br>'
+                '<span style="opacity:.7;font-size:.82rem;">'
+                'API는 매출 발생 + 활동 회원 승인 후 발급됨 (정책)'
+                '</span>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
+        # ── 📂 CSV 업로드 (파트너스 매출 리포트) ──
+        with st.expander("📂 쿠팡 파트너스 CSV 업로드 (매출 자동 매칭)"):
+            st.caption("쿠팡 파트너스 → 수익 리포트 → CSV 다운로드 → 여기 업로드 시 subId별 매출 자동 채움")
+            _csv_file = st.file_uploader(
+                "CSV 파일", type=["csv"], key="_partners_csv_upload",
+                label_visibility="collapsed",
+            )
+            if _csv_file:
+                try:
+                    _csv_records = tracking.parse_partners_csv(_csv_file.read())
+                    if not _csv_records:
+                        st.warning("CSV 파싱 실패 — subId 컬럼이 있는지 확인하세요.")
+                    else:
+                        # subId → 매칭
+                        _csv_map = {r["sub_id"]: r for r in _csv_records}
+                        _matched = 0
+                        for _r in _all_track:
+                            _sid = _r.get("sub_id", "")
+                            if _sid and _sid in _csv_map:
+                                _data = _csv_map[_sid]
+                                project_store.update_tracking_metrics(
+                                    _r["project_id"], _r["video_id"],
+                                    manual_clicks=_data["clicks"],
+                                    manual_revenue_krw=_data["revenue_krw"],
+                                )
+                                _matched += 1
+                        st.success(f"✅ {_matched}건 자동 매칭 완료 / 총 {len(_csv_records)}개 CSV 행")
+                        if _matched > 0:
+                            st.rerun()
+                except Exception as e:
+                    st.error(f"CSV 처리 오류: {type(e).__name__}")
 
         _total_clicks = sum(int(r.get("manual_clicks", 0) or 0) for r in _all_track)
         _total_rev = sum(int(r.get("manual_revenue_krw", 0) or 0) for r in _all_track)

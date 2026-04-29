@@ -92,14 +92,108 @@ def create_partners_deeplink(coupang_url: str, sub_id: str,
 
 
 def manual_subid_instructions(sub_id: str) -> str:
-    """API 키 없을 때, 사용자에게 수동 적용 방법 안내."""
+    """API 키 없을 때, 사용자에게 수동 적용 방법 안내.
+
+    쿠팡 파트너스 API는 '최종 승인 회원'만 받을 수 있음 (2024-2026 정책).
+    초기 매출 0원 사용자는 API 없이 시작해야 하므로, 수동 subId가 핵심 흐름.
+    """
     return (
-        f"이 영상의 추적 ID: **`{sub_id}`**\n\n"
-        "1. 쿠팡 파트너스 대시보드 → 도구 → 링크 생성기 진입\n"
-        f"2. 상품 URL 입력 후 **subId 입력란에 `{sub_id}` 복사 붙여넣기**\n"
-        "3. 생성된 링크를 영상 설명란에 사용\n\n"
-        "→ 7일 후 파트너스 리포트에서 이 ID로 클릭/매출 확인 가능"
+        f"### 🎯 이 영상의 추적 ID\n"
+        f"```\n{sub_id}\n```\n\n"
+        f"**🔄 쿠팡 파트너스 사이트에서 단축 링크 만드는 법** (API 승인 전 단계):\n\n"
+        f"1. https://partners.coupang.com 로그인\n"
+        f"2. **링크 생성기** 메뉴 → 상품 URL 입력\n"
+        f"3. **subId(서브 ID) 입력란**에 위 ID 그대로 붙여넣기:\n"
+        f"   ```\n   {sub_id}\n   ```\n"
+        f"4. **'단축 URL 생성'** 클릭 → `link.coupang.com/a/XXXXX` 받음\n"
+        f"5. 그 단축 URL을 **영상 설명란**에 붙여넣기\n\n"
+        f"---\n\n"
+        f"**📊 7일 후 매출 확인하는 법**:\n\n"
+        f"- 쿠팡 파트너스 → **수익 리포트** → 'subId별 보기'\n"
+        f"- `{sub_id}` 검색 → 클릭/매출 숫자 확인\n"
+        f"- 본 앱 STEP 4 추적 대시보드에 그 숫자 입력 → 케이스 스터디 자동 생성\n\n"
+        f"💡 **CSV 업로드 가능**: 파트너스 → 리포트 → CSV 다운로드 → 본 앱 대시보드에 업로드 시 "
+        f"subId 자동 매칭됩니다."
     )
+
+
+def parse_partners_csv(file_content: bytes) -> list:
+    """쿠팡 파트너스 매출 리포트 CSV → subId별 매출 dict.
+
+    예상 CSV 컬럼 (쿠팡 표준):
+      - subId / 서브ID / sub_id
+      - 클릭수 / 클릭 / clicks
+      - 수수료 / 매출 / commission
+
+    Returns: [{"sub_id": str, "clicks": int, "revenue_krw": int}, ...]
+    """
+    import csv
+    import io
+
+    # utf-8-sig (BOM) → utf-8 → cp949 순서로 시도
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "cp949", "euc-kr"):
+        try:
+            text = file_content.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if text is None:
+        return []
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        return []
+
+    # 컬럼명 정규화 (한국어/영어 모두 지원)
+    sub_keys = {"subId", "subid", "서브ID", "서브 ID", "sub_id", "SubId"}
+    click_keys = {"클릭수", "클릭", "clicks", "Clicks"}
+    rev_keys = {"수수료", "매출", "수수료(원)", "commission", "Commission", "Revenue"}
+
+    def _find_col(fieldnames, candidates):
+        for name in fieldnames:
+            if name and name.strip() in candidates:
+                return name
+        # 부분 매칭
+        for name in fieldnames:
+            if not name:
+                continue
+            for cand in candidates:
+                if cand.lower() in name.lower():
+                    return name
+        return None
+
+    sub_col = _find_col(reader.fieldnames, sub_keys)
+    click_col = _find_col(reader.fieldnames, click_keys)
+    rev_col = _find_col(reader.fieldnames, rev_keys)
+
+    if not sub_col:
+        return []
+
+    results = []
+    for row in reader:
+        sid = (row.get(sub_col) or "").strip()
+        if not sid:
+            continue
+        clicks = 0
+        revenue = 0
+        if click_col:
+            try:
+                clicks = int(str(row.get(click_col, "0")).replace(",", "") or "0")
+            except (ValueError, TypeError):
+                pass
+        if rev_col:
+            try:
+                rev_raw = str(row.get(rev_col, "0")).replace(",", "").replace("원", "").strip()
+                revenue = int(float(rev_raw or "0"))
+            except (ValueError, TypeError):
+                pass
+        results.append({
+            "sub_id": sid,
+            "clicks": clicks,
+            "revenue_krw": revenue,
+        })
+    return results
 
 
 def make_tracking_record(video_id: str, project_id: str, coupang_url: str = "",
