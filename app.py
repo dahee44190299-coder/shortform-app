@@ -235,8 +235,8 @@ html, body, [class*="css"]{
   font-family: 'Pretendard', -apple-system, sans-serif !important;
   background: #0A0A0F !important;
   color: #F4F4F8 !important;
-  font-size: 17px !important;  /* 기본 17px (이전 16px) */
-  line-height: 1.6 !important;
+  font-size: 18px !important;  /* 기본 18px (이전 17px) — 가독성 우선 */
+  line-height: 1.65 !important;
 }
 .stApp{ background: #0A0A0F !important; color: #F4F4F8 !important; }
 .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{ color: #F4F4F8 !important; }
@@ -3366,13 +3366,13 @@ def render_step1():
             _douyin_url = f"https://www.douyin.com/search/{_douyin_kw}"
         else:
             _douyin_url = "https://www.douyin.com"
-        st.markdown("#### 🎵 더우인(Douyin) 바로가기")
-        st.caption("더우인에서 제품 관련 영상을 찾고, URL을 위에 붙여넣어 다운로드하세요.")
-        _dy_c1, _dy_c2 = st.columns(2)
-        with _dy_c1:
-            st.link_button("🔗 더우인에서 검색", _douyin_url)
-        with _dy_c2:
-            st.text_input("복사용 링크", _douyin_url, key="douyin_copy_url", label_visibility="collapsed")
+        with st.expander("🎵 더우인(Douyin) 영상 검색 (선택)"):
+            st.caption("더우인에서 제품 관련 영상을 찾고, URL을 위에 붙여넣어 다운로드하세요.")
+            _dy_c1, _dy_c2 = st.columns(2)
+            with _dy_c1:
+                st.link_button("🔗 더우인에서 검색", _douyin_url)
+            with _dy_c2:
+                st.text_input("복사용 링크", _douyin_url, key="douyin_copy_url", label_visibility="collapsed")
 
         # 쿠팡 제품 이미지/동영상 자동 추출 (기존 기능 유지)
         if coupang_url:
@@ -3680,11 +3680,17 @@ def render_step1():
     # ║ 블록 3: 🔧 참고 도구                                      ║
     # ╚══════════════════════════════════════════════════════════╝
     st.markdown("---")
-    # ── 참고 도구 (선택사항) ──
+    # ── 참고 도구 (체크 시에만 표시) ──
     st.markdown("---")
-    st.markdown("##### 🔧 참고 도구 <span style='font-size:.7rem;color:#9CA3AF;'>선택사항</span>",
-                unsafe_allow_html=True)
-    st.caption("Pexels 검색, YouTube/Instagram/타오바오 트렌드 참고. 영상 확보가 끝났으면 STEP 3으로 넘어가세요.")
+    _ref_open = st.checkbox(
+        "🔧 참고 도구 보기 (Pexels 검색 / YouTube / Instagram / 타오바오 트렌드)",
+        value=False, key="_ref_tools_open",
+        help="영상 확보가 끝났으면 펼치지 마세요. STEP 3으로 바로 가는 게 좋아요.",
+    )
+    if not _ref_open:
+        st.caption("👆 영상 확보가 끝났으면 우측 미리보기 패널에서 STEP 3으로 이동하세요.")
+        _render_nav_buttons()
+        return  # ← 참고 도구 안 펼치면 STEP 1 종료
 
     # ── ① Pexels 직접 키워드 검색 + AI 추천 ──
     st.markdown("### 🎬 Pexels 배경 영상 검색")
