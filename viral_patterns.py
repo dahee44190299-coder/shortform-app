@@ -226,6 +226,85 @@ VIRAL_PATTERNS = {
             "쿠팡 링크 설명란."
         ),
     },
+
+    # ── 🔥 도파민 폭발 패턴 (Z세대/2030 viral) ────────────────
+    "instant_value": {
+        "label": "⚡ 즉각 가치 폭발",
+        "when": "1초 안에 결과/혜택 보여주기 (가장 강력한 viral)",
+        "hint": "결론부터, 짧고 임팩트 있게. 첫 문장 10자 이내.",
+        "openers": [
+            "이거 1초만 봐.",
+            "이거 보고 머리 멈춤.",
+            "이거 알고 인생 바뀜.",
+            "10초 안에 끝.",
+        ],
+        "example": (
+            "이거 1초만 봐.\n"
+            "{product} 실화임?\n"
+            "원래 5만원인데 지금 1만원대.\n"
+            "와 진짜 미쳤어.\n"
+            "리뷰 4.9에 5천 개 넘음.\n"
+            "쿠팡 로켓배송 내일 도착.\n"
+            "링크 밑에. 진심 이건 사야 함."
+        ),
+    },
+    "discovery_story": {
+        "label": "👀 발견 스토리",
+        "when": "우연히 알게 된 톤 (자연스러움 = 신뢰)",
+        "hint": "친구/우연/SNS에서 본 척. 광고 같지 않게.",
+        "openers": [
+            "친구 폰에서 우연히 봤는데",
+            "지나가다 본 건데 진심",
+            "댓글 보고 사봤는데",
+            "엄마가 쓰는 거 따라 사봤는데",
+        ],
+        "example": (
+            "친구 폰에서 우연히 본 건데\n"
+            "{product} 진짜 미쳤어.\n"
+            "친구는 한 달 썼다는데 피부 결 봐봐.\n"
+            "성분도 시카 70프로라 자극 없대.\n"
+            "2만원대인데 200ml. 약국보다 쌈.\n"
+            "나도 어제 시켰음. 링크 밑에."
+        ),
+    },
+    "taboo_breaker": {
+        "label": "🤐 금기 깨기",
+        "when": "내부자/판매자/전문가가 안 알려주는 진실",
+        "hint": "'사장님은 알리면 안 된다고 했어' 류 — 금기 + 호기심",
+        "openers": [
+            "사장님이 알리면 짤린다고 했어.",
+            "원래 이렇게 쓰는 거 아니래 ㅋㅋ",
+            "이거 비밀인데 진심 너만 알아.",
+            "직원이 비싼 거 사지 말랬어.",
+        ],
+        "example": (
+            "이거 비밀인데 너만 알아.\n"
+            "올영 직원이 추천 안 한다는 그 토너.\n"
+            "{product} 솔직히 비싼 거 살 필요 없대.\n"
+            "성분 똑같은데 가격 절반.\n"
+            "직원이 본인도 이거 쓴다고 함.\n"
+            "쿠팡에 검색하면 바로 나와. 링크 밑에."
+        ),
+    },
+    "z_casual": {
+        "label": "🤙 Z세대 캐주얼",
+        "when": "20대 친구처럼 자연스럽게 (가장 친근)",
+        "hint": "ㅋㅋ, 진심, 미친, 와, 헐 등 Z세대 화법. 격식 0%.",
+        "openers": [
+            "와 진심 미친 거 아냐?",
+            "헐 이거 뭐임 ㅋㅋ",
+            "이거 진심 미쳤어.",
+            "이런 거 진짜 처음 봄.",
+        ],
+        "example": (
+            "와 이거 진심 미친 거 아냐?\n"
+            "{product} 어제 처음 발라봤거든.\n"
+            "오늘 거울 보고 헐 했음 ㅋㅋ\n"
+            "민감 피부인데 따끔거림 0.\n"
+            "친구가 화장 뭐 바꿨냐 함.\n"
+            "쿠팡에 2만원대. 링크 밑에 박아둠."
+        ),
+    },
 }
 
 
@@ -258,24 +337,24 @@ def pick_three_patterns(category: str = "general", use_case: str = "coupang_affi
 
     가장 다양성 있게 — 톤/구조가 서로 다른 3개 선택.
     """
-    # 카테고리별 우선순위 (카테고리 적합성)
+    # 카테고리별 우선순위 — 도파민 폭발 패턴 우선 (Z세대 viral)
     priorities = {
-        "beauty": ["personal_failure", "before_after", "expert_voice",
-                    "myth_buster", "raw_authentic", "shocking_stat"],
-        "food": ["shocking_stat", "comparison_battle", "countdown",
-                  "personal_failure", "fear_loss"],
-        "digital": ["comparison_battle", "shocking_stat", "expert_voice",
-                     "myth_buster", "insider_secret"],
-        "household": ["before_after", "fear_loss", "personal_failure",
-                       "myth_buster", "raw_authentic"],
-        "fashion": ["countdown", "comparison_battle", "raw_authentic",
-                     "before_after"],
-        "baby_kids": ["personal_failure", "expert_voice", "fear_loss",
-                       "shocking_stat"],
-        "pet": ["personal_failure", "raw_authentic", "shocking_stat",
-                 "before_after"],
-        "general": ["shocking_stat", "personal_failure", "comparison_battle",
-                     "reverse_hook", "countdown"],
+        "beauty": ["instant_value", "z_casual", "discovery_story",
+                    "personal_failure", "before_after", "taboo_breaker"],
+        "food": ["instant_value", "shocking_stat", "z_casual",
+                  "discovery_story", "comparison_battle"],
+        "digital": ["instant_value", "comparison_battle", "shocking_stat",
+                     "taboo_breaker", "z_casual"],
+        "household": ["before_after", "instant_value", "discovery_story",
+                       "z_casual", "fear_loss"],
+        "fashion": ["z_casual", "discovery_story", "instant_value",
+                     "countdown", "comparison_battle"],
+        "baby_kids": ["personal_failure", "discovery_story", "expert_voice",
+                       "instant_value"],
+        "pet": ["z_casual", "discovery_story", "personal_failure",
+                 "instant_value"],
+        "general": ["instant_value", "z_casual", "discovery_story",
+                     "shocking_stat", "taboo_breaker"],
     }
     candidates = priorities.get(category, priorities["general"])
     # 처음 3개 선택 (반복 없음)
