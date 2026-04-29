@@ -230,45 +230,60 @@ st.markdown("""
   --error: #EF4444;
 }
 
-/* 글로벌 다크 — 큰 가독성 폰트 (17px 기준) */
+/* ═════ 디자인 시스템 (Synthesia/Runway 톤) ═════ */
 html, body, [class*="css"]{
   font-family: 'Pretendard', -apple-system, sans-serif !important;
   background: #0A0A0F !important;
   color: #F4F4F8 !important;
-  font-size: 18px !important;  /* 기본 18px (이전 17px) — 가독성 우선 */
-  line-height: 1.65 !important;
+  font-size: 16px !important;  /* 표준 16px (타사 15-16px 일치) */
+  line-height: 1.6 !important;
+  letter-spacing: -.005em !important;
 }
 .stApp{ background: #0A0A0F !important; color: #F4F4F8 !important; }
-.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{ color: #F4F4F8 !important; }
-.stApp h1{ font-size: 2.25rem !important; font-weight: 800 !important; line-height: 1.2 !important; }
-.stApp h2{ font-size: 1.65rem !important; font-weight: 700 !important; line-height: 1.25 !important; }
-.stApp h3{ font-size: 1.3rem !important; font-weight: 700 !important; line-height: 1.3 !important; }
-.stApp h4{ font-size: 1.15rem !important; font-weight: 700 !important; line-height: 1.35 !important; }
-.stApp h5{ font-size: 1.02rem !important; font-weight: 600 !important; line-height: 1.4 !important; }
-.stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; font-size: 1rem !important; }
-.stApp p{ line-height: 1.65 !important; }
-.stMarkdown, .stMarkdown p{ color: #E5E5EB !important; font-size: 1rem !important; }
-/* caption 약간 작지만 여전히 읽기 쉽게 */
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{
+  color: #FFFFFF !important; letter-spacing: -.02em !important;
+}
+.stApp h1{ font-size: 2.5rem !important; font-weight: 800 !important; line-height: 1.15 !important; margin: 0 0 24px !important; }
+.stApp h2{ font-size: 1.875rem !important; font-weight: 700 !important; line-height: 1.2 !important; margin: 0 0 20px !important; }
+.stApp h3{ font-size: 1.5rem !important; font-weight: 700 !important; line-height: 1.25 !important; margin: 0 0 16px !important; }
+.stApp h4{ font-size: 1.25rem !important; font-weight: 700 !important; line-height: 1.3 !important; margin: 0 0 12px !important; }
+.stApp h5{ font-size: 1rem !important; font-weight: 600 !important; line-height: 1.4 !important; margin: 0 0 10px !important; }
+.stApp p, .stApp span, .stApp label{ color: #D4D4D8 !important; font-size: 0.95rem !important; }
+.stApp p{ line-height: 1.65 !important; margin: 0 0 12px !important; }
+.stMarkdown, .stMarkdown p{ color: #D4D4D8 !important; font-size: 0.95rem !important; }
 .stApp [data-testid="stCaptionContainer"], .stApp small{
-  font-size: 0.88rem !important; color: #B8B8C8 !important;
+  font-size: 0.82rem !important; color: #9CA3AF !important;
 }
-/* 입력 필드 폰트 */
+
+/* 입력 — 큰 padding (Pika 톤) */
 .stTextInput input, .stTextArea textarea, .stSelectbox > div > div{
-  font-size: 1rem !important; line-height: 1.5 !important;
+  font-size: 0.95rem !important; line-height: 1.5 !important;
+  padding: 12px 14px !important; min-height: 44px !important;
 }
-/* 버튼 폰트 */
-.stButton > button{ font-size: 1rem !important; padding: 12px 24px !important; }
-/* 컨테이너 패딩 — 와이드 + viewport 우선 */
+.stTextInput label, .stTextArea label, .stSelectbox label, .stRadio label{
+  font-size: 0.85rem !important; font-weight: 500 !important;
+  color: #9CA3AF !important; text-transform: uppercase;
+  letter-spacing: 0.05em; margin-bottom: 6px !important;
+}
+.stButton > button{
+  font-size: 0.95rem !important; padding: 12px 24px !important;
+  letter-spacing: -.005em !important; min-height: 44px !important;
+}
+
+/* 컨테이너 — 진짜 SaaS 여백 (Synthesia 톤) */
 .main .block-container{
-  padding-top: 1rem !important;
-  padding-bottom: 2rem !important;
-  padding-left: 2.5rem !important;
-  padding-right: 2.5rem !important;
-  max-width: 1400px !important;
+  padding: 32px 48px 64px !important;
+  max-width: 1280px !important;
 }
+/* 섹션 간 호흡 */
+.main hr{ margin: 32px 0 !important; border-color: rgba(255,255,255,.06) !important; }
+.main [data-testid="stVerticalBlock"] > div{ gap: 16px !important; }
+
 @media (max-width: 768px){
   html, body{ font-size: 15px !important; }
-  .main .block-container{ padding: 1rem !important; }
+  .stApp h1{ font-size: 1.75rem !important; }
+  .stApp h2{ font-size: 1.4rem !important; }
+  .main .block-container{ padding: 16px !important; }
 }
 
 /* ═════ 사이드바 — 진짜 검정 + 흰 텍스트 강제 ═════ */
@@ -410,37 +425,32 @@ div[data-testid="stExpander"]{
 div[data-testid="stExpander"] summary{ color: #F4F4F8 !important; }
 div[data-testid="stExpander"] *{ color: #E5E5EB !important; }
 
-/* 일반 버튼 — 다크 글래스 */
+/* 버튼 — Synthesia/Linear 톤 */
 .stButton>button{
-  background: rgba(255,255,255,.04) !important;
+  background: #1A1A23 !important;
   color: #F4F4F8 !important;
-  border: 1px solid rgba(255,255,255,.1) !important;
-  border-radius: 10px !important;
+  border: 1px solid #2A2A35 !important;
+  border-radius: 8px !important;
   font-family: 'Pretendard', sans-serif !important;
   font-weight: 600 !important;
-  padding: 10px 24px !important;
-  font-size: .9rem !important;
-  transition: all .2s ease !important;
+  transition: all .15s ease !important;
 }
 .stButton>button:hover{
-  background: rgba(255,255,255,.08) !important;
-  border-color: rgba(255,107,53,.4) !important;
-  transform: translateY(-1px) !important;
+  background: #22222D !important;
+  border-color: #3D3D4A !important;
+  transform: none !important;
 }
-
-/* Primary 버튼 — 깔끔한 단색 + 미세 호버 (Klap 스타일) */
 .stButton>button[kind="primary"]{
   background: #FF6B35 !important;
   color: #fff !important;
-  border: none !important;
-  box-shadow: 0 2px 8px rgba(255,107,53,.2) !important;
+  border: 1px solid #FF6B35 !important;
   font-weight: 700 !important;
-  transition: all .15s ease !important;
+  box-shadow: none !important;
 }
 .stButton>button[kind="primary"]:hover{
-  background: #FF8B5B !important;
-  box-shadow: 0 4px 12px rgba(255,107,53,.3) !important;
-  transform: translateY(-1px) !important;
+  background: #E55A2B !important;
+  border-color: #E55A2B !important;
+  transform: none !important;
 }
 
 .stButton>button:disabled{
@@ -479,19 +489,17 @@ div[data-testid="stExpander"] *{ color: #E5E5EB !important; }
 /* Radio */
 .stRadio div[role="radiogroup"] label span{ color: #E5E5EB !important; }
 
-/* 카드 */
+/* 카드 — 깔끔 단색 (Linear/Synthesia 톤) */
 .card{
-  background: linear-gradient(135deg, #13131A 0%, #1A1A23 100%);
+  background: #13131A;
   border: 1px solid #2A2A35;
-  border-radius: 16px;
-  padding: 20px 24px;
+  border-radius: 12px;
+  padding: 24px;
   margin-bottom: 16px;
-  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+  transition: border-color .15s ease;
 }
 .card:hover{
-  transform: translateY(-2px);
-  border-color: rgba(255,107,53,.3);
-  box-shadow: 0 12px 32px rgba(0,0,0,.4), 0 0 24px rgba(255,107,53,.08);
+  border-color: #3D3D4A;
 }
 .card-label{
   font-size: .7rem; font-weight: 700; color: #FF6B35 !important;
@@ -544,24 +552,24 @@ div[data-testid="stExpander"] *{ color: #E5E5EB !important; }
 }
 hr{ border-color: rgba(255,255,255,.08) !important; }
 
-/* ux-card 다크 */
+/* ux-card 깔끔 단색 */
 .ux-card{
-  background: linear-gradient(135deg, #13131A 0%, #1A1A23 100%);
+  background: #13131A;
   border: 1px solid #2A2A35;
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 .ux-card-title{
   font-size: .72rem; font-weight: 700;
   color: #FF6B35 !important;
-  text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px;
 }
 .ux-card h4{
-  font-size: 1.1rem; font-weight: 700;
-  color: #F4F4F8 !important; margin: 0 0 8px;
+  font-size: 1.25rem; font-weight: 700;
+  color: #FFFFFF !important; margin: 0 0 8px;
 }
-.ux-sub{ color: #9CA3AF !important; font-size: .85rem; }
+.ux-sub{ color: #9CA3AF !important; font-size: .9rem; }
 
 /* opt-card */
 .opt-card{
@@ -3212,6 +3220,29 @@ def render_step1():
         st.session_state.instagram_links = []
         st.session_state.pexels_ai_keywords = []
 
+    # ── sub-step 분기: 소스 입력 끝 → 영상 확보 단계로 이동 버튼 ──
+    _step1_view = st.session_state.get("step1_view", "source")
+    if _step1_view == "source":
+        st.markdown("---")
+        _src_done_cols = st.columns([1, 1])
+        with _src_done_cols[1]:
+            if st.button("🎬 다음: 영상 확보 →", key="_step1_to_video",
+                          type="primary", use_container_width=True):
+                st.session_state.step1_view = "video"
+                st.rerun()
+        with _src_done_cols[0]:
+            st.caption("✅ 제품명 + 카테고리 입력 끝났으면 →")
+        _render_nav_buttons()
+        return  # 소스 입력만 표시. 영상 확보 영역 안 보임.
+
+    # ── (영상 확보 단계) 헤더 + 이전 단계 버튼 ──
+    _back_cols = st.columns([1, 4])
+    with _back_cols[0]:
+        if st.button("← 소스 수정", key="_video_back_to_source",
+                      use_container_width=True):
+            st.session_state.step1_view = "source"
+            st.rerun()
+
     # ╔══════════════════════════════════════════════════════════╗
     # ║ 블록 2: 🎬 영상 확보                                      ║
     # ╚══════════════════════════════════════════════════════════╝
@@ -5468,22 +5499,27 @@ with st.sidebar:
         st.session_state.app_phase = "project_select"
         st.rerun()
 
-    # 활성 프로젝트 있을 때만 STEP 메뉴 노출
+    # 활성 프로젝트 있을 때만 STEP 메뉴 노출 (5단계)
     if st.session_state.get("active_project_id"):
         _step_labels = [
-            (1, "1️⃣ 소스 선택"),
-            (2, "2️⃣ 영상 편집"),
-            (3, "3️⃣ AI 대본·자막"),
-            (4, "4️⃣ 추적 + 다운로드"),
+            (1, "source", "1️⃣ 링크/소스"),
+            (1, "video", "2️⃣ 영상 확보"),
+            (2, None, "3️⃣ 클립 편집"),
+            (3, None, "4️⃣ 영상 생성 (AI)"),
+            (4, None, "5️⃣ 다운로드 + 추적"),
         ]
         _curr = st.session_state.get("current_step", 1)
-        for _n, _label in _step_labels:
-            _icon = "▶" if _n == _curr else "  "
-            if st.button(f"{_icon} {_label}", key=f"_sb_step_{_n}",
+        _curr_view = st.session_state.get("step1_view", "source")
+        for _step, _view, _label in _step_labels:
+            _is_active = (_step == _curr) and (_view is None or _view == _curr_view)
+            _icon = "▶" if _is_active else "  "
+            if st.button(f"{_icon} {_label}", key=f"_sb_step_{_step}_{_view}",
                           use_container_width=True,
-                          type="primary" if _n == _curr else "secondary"):
+                          type="primary" if _is_active else "secondary"):
                 st.session_state.app_phase = "pipeline"
-                st.session_state.current_step = _n
+                st.session_state.current_step = _step
+                if _view:
+                    st.session_state.step1_view = _view
                 st.rerun()
     else:
         st.caption("프로젝트를 선택/생성하면 STEP 메뉴가 활성화됩니다.")
@@ -5552,36 +5588,46 @@ elif st.session_state.app_phase == "pipeline":
         st.session_state.active_project_id = _temp_pid
         st.rerun()
 
-    # ── STEP 진행 워크플로우 (AI 영상 SaaS 스타일 큰 카드) ──
+    # ── STEP 진행 워크플로우 (5단계 — 소스/영상/편집/생성/다운로드) ──
     _curr = st.session_state.get("current_step", 1)
+    _step1_view = st.session_state.get("step1_view", "source")
+    # 시각상 5단계 표시 (내부 current_step 1-4 + step1_view sub-step)
+    if _curr == 1 and _step1_view == "source":
+        _visual_step = 1
+    elif _curr == 1 and _step1_view == "video":
+        _visual_step = 2
+    else:
+        _visual_step = _curr + 1  # STEP 2/3/4 → 시각상 3/4/5
+
     _steps_meta = [
-        (1, "🎯", "소스", "제품/주제"),
-        (2, "✂️", "편집", "클립 정렬"),
-        (3, "🤖", "AI 대본", "viral 패턴"),
-        (4, "🔗", "추적+DL", "매출 측정"),
+        (1, "🔗", "링크/소스", "제품·URL"),
+        (2, "🎬", "영상 확보", "찾기/다운"),
+        (3, "✂️", "클립 편집", "장면 정렬"),
+        (4, "🤖", "영상 생성", "AI 대본"),
+        (5, "📥", "다운로드", "추적+DL"),
     ]
     _step_html = ('<div style="display:flex;gap:8px;margin:8px 0 24px;'
                   'overflow-x:auto;padding:4px 0;">')
     for _n, _emoji, _label, _sub in _steps_meta:
-        if _n == _curr:
+        if _n == _visual_step:
             _bg = "linear-gradient(135deg,#FF6B35 0%,#F7931E 100%)"
             _fg = "#fff"
             _border = "transparent"
             _shadow = "0 6px 16px rgba(255,107,53,.35)"
             _opacity = "1"
-        elif _n < _curr:
+        elif _n < _visual_step:
             _bg = "linear-gradient(135deg,#10B981 0%,#059669 100%)"
             _fg = "#fff"
             _border = "transparent"
             _shadow = "0 2px 6px rgba(16,185,129,.2)"
             _opacity = "0.85"
         else:
-            _bg = "#F7F8FA"
+            _bg = "#1A1A23"
             _fg = "#9CA3AF"
-            _border = "#E5E8EB"
+            _border = "#2A2A35"
             _shadow = "none"
             _opacity = "1"
-        _check = "✓" if _n < _curr else str(_n)
+        _check = "✓" if _n < _visual_step else str(_n)
         _step_html += (
             f'<div style="flex:1;min-width:130px;background:{_bg};color:{_fg};'
             f'border:1px solid {_border};border-radius:14px;padding:14px 16px;'
