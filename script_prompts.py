@@ -132,10 +132,74 @@ PERSONAL_CONTEXT_TEMPLATE = """
 """
 
 
+# ── 톤 강도 3단계 (광고 친화도 + 시청자 타겟별) ────────
+TONE_STRENGTH_GUIDES = {
+    "casual": {
+        "label": "🤙 캐주얼 (Z세대 2030)",
+        "audience": "20-30대 친구처럼",
+        "platform_fit": "TikTok 최적 / YouTube Shorts OK / Instagram OK",
+        "ad_safety": "쿠팡/공정위 OK, YouTube 광고 단가 약간 ↓",
+        "do_use": (
+            "✅ 자유롭게 사용: '진심', '미친', '와', '헐', '실화임?', 'ㅋㅋ', "
+            "'이거 1초만 봐', '이거 보고 머리 멈춤', '대박', '쩐다'\n"
+            "✅ 친구 카톡체: '~야', '~지', '~잖아', '~거든', '~함'"
+        ),
+        "do_not": (
+            "❌ 격식체 금지 (~예요/~합니다)\n"
+            "❌ ChatGPT 클리셰 금지 (지금 바로/확인하세요/추천드립니다)"
+        ),
+    },
+    "friendly": {
+        "label": "😊 친근 (3040 일반)",
+        "audience": "30-40대 일상 톤",
+        "platform_fit": "모든 플랫폼 OK / YouTube 광고 단가 정상",
+        "ad_safety": "모든 정책 100% 안전",
+        "do_use": (
+            "✅ 부드러운 반말 또는 약한 존댓말 혼용 OK\n"
+            "✅ '진짜', '솔직히', '한번 써봐요', '추천' (강한 표현은 자제)\n"
+            "✅ 자연스러운 일상어"
+        ),
+        "do_not": (
+            "❌ 강한 비속어/속어 자제 (미친/쩐다/ㅋㅋ 자제)\n"
+            "❌ ChatGPT 클리셰 금지\n"
+            "❌ 격식 너무 무거운 표현 자제"
+        ),
+    },
+    "professional": {
+        "label": "💼 정중 (4050+ / B2B)",
+        "audience": "40대 이상 또는 비즈니스 톤",
+        "platform_fit": "YouTube 광고 단가 최상 / B2B/Enterprise OK",
+        "ad_safety": "광고주 친화 100%",
+        "do_use": (
+            "✅ 부드러운 존댓말 ('~예요', '~네요')\n"
+            "✅ 객관적 정보 위주 (수치, 데이터, 전문가 인용)\n"
+            "✅ 신뢰감 있는 표현"
+        ),
+        "do_not": (
+            "❌ 모든 비속어/속어 금지\n"
+            "❌ Z세대 화법 (ㅋㅋ/미친/진심/와/헐) 금지\n"
+            "❌ '이거 1초만 봐' 같은 자극적 표현 자제\n"
+            "❌ ChatGPT 클리셰는 여전히 금지 ('지금 바로'/'확인하세요')"
+        ),
+    },
+}
+
+
+def get_tone_strength_id(tone_label: str) -> str:
+    """UI 라벨/한국어 톤 → 내부 강도 ID 매핑."""
+    if "캐주얼" in tone_label or "Z세대" in tone_label or "casual" in tone_label.lower():
+        return "casual"
+    if "정중" in tone_label or "전문" in tone_label or "professional" in tone_label.lower() \
+            or "존댓말" in tone_label:
+        return "professional"
+    return "friendly"
+
+
 def build_master_prompt(use_case: str, category: str, product: str,
                          tone: str = "친근한 반말", target_chars: int = 200,
                          personal_context: str = "",
-                         pattern_id: str = "") -> tuple:
+                         pattern_id: str = "",
+                         tone_strength: str = "") -> tuple:
     """완성된 (system, user) 프롬프트 페어 반환.
 
     Args:
@@ -150,7 +214,21 @@ def build_master_prompt(use_case: str, category: str, product: str,
     """
     booster = CATEGORY_BOOSTERS.get(category, CATEGORY_BOOSTERS["general"])
 
-    # tone별 변형
+    # 톤 강도 (3단계) — 자동 매핑 또는 명시 지정
+    if not tone_strength:
+        tone_strength = get_tone_strength_id(tone)
+    strength_guide = TONE_STRENGTH_GUIDES.get(tone_strength, TONE_STRENGTH_GUIDES["friendly"])
+
+    tone_block = (
+        f"[톤 강도: {strength_guide['label']}]\n"
+        f"- 타겟 시청자: {strength_guide['audience']}\n"
+        f"- 플랫폼 적합도: {strength_guide['platform_fit']}\n"
+        f"- 광고 안전성: {strength_guide['ad_safety']}\n\n"
+        f"{strength_guide['do_use']}\n\n"
+        f"{strength_guide['do_not']}"
+    )
+
+    # 기존 tone_hint (호환)
     tone_hint = {
         "친근한 반말": "친구한테 카톡 보내듯이. '~야', '~지', '~잖아' 같은 어미. 반말 OK.",
         "정중한 존댓말": "'~예요', '~네요' 같은 부드러운 존댓말. 단, 딱딱하지 않게.",
@@ -171,6 +249,8 @@ def build_master_prompt(use_case: str, category: str, product: str,
 카테고리: {category}
 타겟 분량: {target_chars}자 내외 (30초 음성)
 톤: {tone} — {tone_hint}
+
+{tone_block}
 
 {booster}
 
