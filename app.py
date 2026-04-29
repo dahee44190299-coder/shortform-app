@@ -347,6 +347,105 @@ pre code{background:transparent!important;color:#1A1A2E!important;}
 /* 링크 호버 */
 a{color:#FF6B35!important;text-decoration:none!important;transition:color .15s;}
 a:hover{color:#E55A2B!important;text-decoration:underline!important;}
+
+/* ═════ AI 영상 SaaS 스타일 — Runway/Pika/Synthesia 패턴 ═════ */
+
+/* Generate 버튼 강조 (✨ 키워드 포함된 primary) */
+button[kind="primary"]:has(div p:contains("생성")),
+button[kind="primary"]:has(div p:contains("✨")),
+button[kind="primary"]:has(div:contains("Generate")){
+  background: linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FF1493 100%) !important;
+  background-size: 200% 200% !important;
+  animation: gradient-shift 3s ease infinite;
+  box-shadow: 0 8px 24px rgba(255,107,53,.4), 0 0 60px rgba(255,20,147,.15) !important;
+  font-size: 1rem !important;
+  padding: 14px 28px !important;
+  font-weight: 800 !important;
+}
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* 영상/대본 결과 카드 (갤러리 스타일) */
+.result-card{
+  position: relative;
+  background: linear-gradient(135deg, #FFFFFF 0%, #FAFBFC 100%);
+  border: 1px solid #E5E8EB;
+  border-radius: 16px;
+  padding: 20px;
+  overflow: hidden;
+  transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease;
+}
+.result-card::before{
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 0%, transparent 50%, rgba(255,107,53,.04) 100%);
+  pointer-events: none;
+}
+.result-card:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 16px 48px rgba(0,0,0,.1), 0 0 24px rgba(255,107,53,.08);
+  border-color: rgba(255,107,53,.3);
+}
+
+/* 워크플로우 카드 호버 (큰 STEP 카드) */
+.main > div:has(> div > div[style*="linear-gradient(135deg,#FF6B35"]) > div:hover{
+  transform: translateY(-2px);
+}
+
+/* 사이드바 — 더 깊은 글래스모피즘 */
+[data-testid="stSidebar"]{
+  background: linear-gradient(180deg, rgba(250,251,252,.95) 0%, rgba(242,244,247,.98) 100%) !important;
+  backdrop-filter: blur(20px) saturate(180%);
+  border-right: 1px solid rgba(229,232,235,.4) !important;
+}
+
+/* 강조 헤더 (h1) — Runway 스타일 그라디언트 */
+.main h1{
+  background: linear-gradient(135deg, #1A1A2E 0%, #FF6B35 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -.02em;
+  font-weight: 800;
+}
+
+/* 진행 그라디언트 바 (작업 중일 때) */
+[data-testid="stProgress"] > div > div > div{
+  background: linear-gradient(90deg, #FF6B35 0%, #F7931E 50%, #FF1493 100%) !important;
+}
+
+/* 카드 그리드 (CapCut/Synthesia 스타일) */
+.video-grid{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+/* 작은 배지 — pill 스타일 */
+.pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: .72rem;
+  font-weight: 600;
+  background: rgba(255,107,53,.1);
+  color: #FF6B35;
+  border: 1px solid rgba(255,107,53,.2);
+}
+.pill-success{ background: rgba(16,185,129,.1); color: #10B981; border-color: rgba(16,185,129,.2); }
+.pill-warning{ background: rgba(245,158,11,.1); color: #F59E0B; border-color: rgba(245,158,11,.2); }
+
+/* 모바일 폴리시 */
+@media (max-width:768px){
+  .main h1{font-size:1.6rem !important;}
+  .video-grid{grid-template-columns:1fr;gap:12px;}
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -405,23 +504,58 @@ for k, v in defaults.items():
 
 # ── 프로젝트 선택 화면 ──────────────────────────────────────────
 def render_project_select():
-    # ── 온보딩 가이드 (최초 1회) ──
+    # ── Hero 섹션 (Runway/Pika 스타일 — 그라디언트 + 큰 가치 제안) ──
     if not st.session_state.get("onboarding_done", False):
-        st.markdown("""<div style="background:linear-gradient(135deg,#FFF5F0,#FFF0E6);border:2px solid #FF6B35;border-radius:12px;padding:24px;margin-bottom:20px;">
-<h3 style="margin:0 0 8px;text-align:center;">⚡ 5분에 영상 1개 + 🔗 추적 링크 자동</h3>
-<p style="text-align:center;color:#6B7280;font-size:0.95rem;margin:0 0 16px;">쿠팡 URL 붙여넣기 → 5분 후 다운로드 → 매출까지 추적</p>
-<div style="display:flex;justify-content:center;align-items:center;gap:10px;padding:8px 0;font-size:1rem;flex-wrap:wrap;">
-<span>🛒 URL</span><span style="color:#aaa;">&rarr;</span>
-<span>🎬 영상</span><span style="color:#aaa;">&rarr;</span>
-<span>🤖 AI 스크립트</span><span style="color:#aaa;">&rarr;</span>
-<span>🔗 추적 링크</span><span style="color:#aaa;">&rarr;</span>
-<span>📊 매출 대시보드</span>
+        st.markdown("""
+<div style="position:relative;background:linear-gradient(135deg,#1A1A2E 0%,#3D2645 50%,#FF6B35 100%);
+            border-radius:24px;padding:48px 40px;margin-bottom:24px;overflow:hidden;
+            box-shadow:0 20px 60px rgba(255,107,53,.25);">
+  <div style="position:absolute;top:-50%;right:-20%;width:60%;height:200%;
+              background:radial-gradient(circle,rgba(255,255,255,.08) 0%,transparent 70%);"></div>
+  <div style="position:relative;z-index:1;">
+    <div style="font-size:.78rem;font-weight:700;color:rgba(255,255,255,.7);
+                text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;">
+      AI · SHORTFORM · TRACKING
+    </div>
+    <h1 style="margin:0 0 16px;font-size:2.4rem;font-weight:800;color:#fff !important;
+               line-height:1.15;letter-spacing:-.02em;">
+      쿠팡 URL 한 줄로<br>
+      <span style="background:linear-gradient(135deg,#FFE6D5 0%,#FFB088 100%);
+                   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+                   background-clip:text;">매출 나는 영상</span>까지
+    </h1>
+    <p style="font-size:1rem;color:rgba(255,255,255,.85) !important;margin:0 0 28px;
+              line-height:1.6;max-width:560px;">
+      AI 대본 · 영상 편집 · 추적 링크 · 매출 대시보드 — 한 곳에서.<br>
+      다른 도구와 다른 점: <strong style="color:#fff;">영상마다 매출이 보인다</strong>.
+    </p>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+      <div style="background:rgba(255,255,255,.15);backdrop-filter:blur(10px);
+                  border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 14px;
+                  font-size:.82rem;color:#fff;font-weight:600;">🛒 쿠팡</div>
+      <span style="color:rgba(255,255,255,.4);">→</span>
+      <div style="background:rgba(255,255,255,.15);backdrop-filter:blur(10px);
+                  border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 14px;
+                  font-size:.82rem;color:#fff;font-weight:600;">🎬 영상</div>
+      <span style="color:rgba(255,255,255,.4);">→</span>
+      <div style="background:rgba(255,255,255,.15);backdrop-filter:blur(10px);
+                  border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 14px;
+                  font-size:.82rem;color:#fff;font-weight:600;">🤖 AI 대본</div>
+      <span style="color:rgba(255,255,255,.4);">→</span>
+      <div style="background:rgba(255,255,255,.15);backdrop-filter:blur(10px);
+                  border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:8px 14px;
+                  font-size:.82rem;color:#fff;font-weight:600;">🔗 추적</div>
+      <span style="color:rgba(255,255,255,.4);">→</span>
+      <div style="background:rgba(255,255,255,.25);backdrop-filter:blur(10px);
+                  border:1px solid rgba(255,255,255,.4);border-radius:8px;padding:8px 14px;
+                  font-size:.82rem;color:#fff;font-weight:700;">📊 매출</div>
+    </div>
+  </div>
 </div>
-<p style="text-align:center;color:#6B7280;font-size:0.82rem;margin:12px 0 0;"><strong>다른 도구와 차이</strong>: 영상만 만들고 끝이 아니라, 영상별 매출까지 본다.</p>
-</div>""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)
         _ob_c = st.columns([1, 2, 1])
         with _ob_c[1]:
-            if st.button("시작하기", type="primary", use_container_width=True, key="onboarding_start"):
+            if st.button("✨ 시작하기", type="primary", use_container_width=True, key="onboarding_start"):
                 st.session_state.onboarding_done = True
                 st.rerun()
 
@@ -4912,19 +5046,51 @@ elif st.session_state.app_phase == "pipeline":
         st.session_state.active_project_id = _temp_pid
         st.rerun()
 
-    # ── STEP 진행 표시 (모든 STEP 공통) ──
+    # ── STEP 진행 워크플로우 (AI 영상 SaaS 스타일 큰 카드) ──
     _curr = st.session_state.get("current_step", 1)
-    _step_emojis = ["1️⃣ 소스", "2️⃣ 편집", "3️⃣ AI 대본", "4️⃣ 추적+DL"]
-    _step_html = '<div style="display:flex;gap:6px;margin:0 0 16px;flex-wrap:wrap;">'
-    for _i, _lbl in enumerate(_step_emojis, 1):
-        if _i == _curr:
-            _bg, _fg, _w = "#FF6B35", "#fff", "700"
-        elif _i < _curr:
-            _bg, _fg, _w = "#4CAF50", "#fff", "600"
+    _steps_meta = [
+        (1, "🎯", "소스", "제품/주제"),
+        (2, "✂️", "편집", "클립 정렬"),
+        (3, "🤖", "AI 대본", "viral 패턴"),
+        (4, "🔗", "추적+DL", "매출 측정"),
+    ]
+    _step_html = ('<div style="display:flex;gap:8px;margin:8px 0 24px;'
+                  'overflow-x:auto;padding:4px 0;">')
+    for _n, _emoji, _label, _sub in _steps_meta:
+        if _n == _curr:
+            _bg = "linear-gradient(135deg,#FF6B35 0%,#F7931E 100%)"
+            _fg = "#fff"
+            _border = "transparent"
+            _shadow = "0 6px 16px rgba(255,107,53,.35)"
+            _opacity = "1"
+        elif _n < _curr:
+            _bg = "linear-gradient(135deg,#10B981 0%,#059669 100%)"
+            _fg = "#fff"
+            _border = "transparent"
+            _shadow = "0 2px 6px rgba(16,185,129,.2)"
+            _opacity = "0.85"
         else:
-            _bg, _fg, _w = "#F3F4F6", "#6B7280", "500"
-        _step_html += (f'<div style="background:{_bg};color:{_fg};padding:6px 14px;'
-                       f'border-radius:20px;font-size:.85rem;font-weight:{_w};">{_lbl}</div>')
+            _bg = "#F7F8FA"
+            _fg = "#9CA3AF"
+            _border = "#E5E8EB"
+            _shadow = "none"
+            _opacity = "1"
+        _check = "✓" if _n < _curr else str(_n)
+        _step_html += (
+            f'<div style="flex:1;min-width:130px;background:{_bg};color:{_fg};'
+            f'border:1px solid {_border};border-radius:14px;padding:14px 16px;'
+            f'box-shadow:{_shadow};opacity:{_opacity};'
+            f'transition:transform .2s ease,box-shadow .2s ease;">'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+            f'<div style="width:22px;height:22px;border-radius:50%;'
+            f'background:rgba(255,255,255,.25);display:flex;align-items:center;'
+            f'justify-content:center;font-size:.7rem;font-weight:700;">{_check}</div>'
+            f'<div style="font-size:1.1rem;">{_emoji}</div>'
+            f'</div>'
+            f'<div style="font-size:.92rem;font-weight:700;line-height:1.2;">{_label}</div>'
+            f'<div style="font-size:.72rem;opacity:.75;margin-top:2px;">{_sub}</div>'
+            f'</div>'
+        )
     _step_html += '</div>'
     st.markdown(_step_html, unsafe_allow_html=True)
 
