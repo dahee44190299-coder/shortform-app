@@ -4160,6 +4160,25 @@ def render_step3():
         # ── 쿠팡 스크립트 자동 생성 ──
         st.markdown("#### 📋 쿠팡 숏폼 스크립트 자동 생성")
 
+        # ── 🎚️ 톤 강도 선택 (시청자 타겟 + 플랫폼 안전성) ──
+        st.markdown("##### 🎚️ 톤 강도 (시청자 + 플랫폼 안전성)")
+        _tone_strength_options = [
+            ("casual", "🤙 캐주얼 (Z세대 2030)", "TikTok 최적, 미친/ㅋㅋ/진심 OK"),
+            ("friendly", "😊 친근 (3040 일반)", "모든 플랫폼 안전, 진짜/솔직히 정도"),
+            ("professional", "💼 정중 (4050+ B2B)", "광고 단가 최상, 존댓말 + 데이터"),
+        ]
+        _ts_idx = st.radio(
+            "톤 강도",
+            range(len(_tone_strength_options)),
+            format_func=lambda i: f"{_tone_strength_options[i][1]} — {_tone_strength_options[i][2]}",
+            key="_w_tone_strength_idx",
+            label_visibility="collapsed",
+            help="📌 캐주얼: TikTok 최적, 단 YouTube 광고 단가 약간 ↓. "
+                 "정중: 광고 단가 최상, 단 도파민 ↓",
+        )
+        _tone_strength = _tone_strength_options[_ts_idx][0]
+        st.session_state["_active_tone_strength"] = _tone_strength
+
         # ── 톤 / 강조 포인트 / 길이 선택 UI ──
         _sc_c1, _sc_c2, _sc_c3 = st.columns(3)
         with _sc_c1:
@@ -4222,11 +4241,13 @@ def render_step3():
 
                 # 3개 변형 동시 생성 (각각 다른 viral 패턴)
                 _variants = []
+                _ts = st.session_state.get("_active_tone_strength", "")
                 for _pid in _three_patterns:
                     _sys, _usr = script_prompts.build_master_prompt(
                         use_case=_active_uc, category=_inferred_cat, product=pname,
                         tone=_script_tone, target_chars=200,
                         personal_context=_personal_ctx, pattern_id=_pid,
+                        tone_strength=_ts,
                     )
                     _script_v = call_claude(_sys, _usr, prompt_type=f"script_viral_{_pid}") or ""
                     if _script_v:
