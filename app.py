@@ -238,33 +238,66 @@ html, body, [class*="css"]{
 .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{ color: #F4F4F8 !important; }
 .stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; }
 .stMarkdown, .stMarkdown p{ color: #E5E5EB !important; }
-.main .block-container{ padding-top: 1.5rem !important; padding-bottom: 4rem !important; max-width: 1200px !important; }
+.main .block-container{ padding-top: 0.5rem !important; padding-bottom: 2rem !important; max-width: 1200px !important; }
 
-/* 사이드바 — 진짜 다크 */
+/* 사이드바 — 진짜 다크 + 텍스트 가독성 강화 */
 [data-testid="stSidebar"]{
-  background: linear-gradient(180deg, #0A0A0F 0%, #13131A 100%) !important;
-  border-right: 1px solid rgba(255,255,255,.06) !important;
+  background: linear-gradient(180deg, #16161F 0%, #1A1A23 100%) !important;
+  border-right: 1px solid rgba(255,255,255,.08) !important;
 }
-[data-testid="stSidebar"] *{ color: #E5E5EB !important; }
+[data-testid="stSidebar"] *{ color: #F0F0F5 !important; }
 [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4{
-  color: #F4F4F8 !important;
+[data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4,
+[data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6{
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
 }
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label, [data-testid="stSidebar"] div{
+  color: #F0F0F5 !important;
+}
+[data-testid="stSidebar"] small, [data-testid="stSidebar"] .stCaption,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{
+  color: #B8B8C8 !important;
+}
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] .stMarkdown p{
+  color: #F0F0F5 !important;
+}
+[data-testid="stSidebar"] hr{ border-color: rgba(255,255,255,.1) !important; }
 [data-testid="stSidebar"] .stButton>button{
-  background: rgba(255,255,255,.04) !important;
-  color: #F4F4F8 !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
+  background: rgba(255,255,255,.06) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+  font-weight: 600 !important;
 }
 [data-testid="stSidebar"] .stButton>button:hover{
-  background: rgba(255,107,53,.1) !important;
-  border-color: rgba(255,107,53,.3) !important;
-  color: #FF6B35 !important;
+  background: rgba(255,107,53,.15) !important;
+  border-color: rgba(255,107,53,.4) !important;
+  color: #FF8B5B !important;
 }
-[data-testid="stSidebar"] button[kind="primary"]{
+[data-testid="stSidebar"] .stButton>button[kind="primary"]{
   background: linear-gradient(135deg, #FF6B35 0%, #FF1493 100%) !important;
-  color: #fff !important;
+  color: #FFFFFF !important;
   border: none !important;
-  box-shadow: 0 4px 14px rgba(255,107,53,.3) !important;
+  box-shadow: 0 4px 14px rgba(255,107,53,.35) !important;
+}
+[data-testid="stSidebar"] .stTextInput input,
+[data-testid="stSidebar"] .stTextArea textarea{
+  background: rgba(0,0,0,.3) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255,255,255,.15) !important;
+}
+[data-testid="stSidebar"] .stTextInput input::placeholder,
+[data-testid="stSidebar"] .stTextArea textarea::placeholder{
+  color: #888897 !important;
+}
+[data-testid="stSidebar"] div[data-testid="stExpander"]{
+  background: rgba(0,0,0,.2) !important;
+  border: 1px solid rgba(255,255,255,.1) !important;
+}
+[data-testid="stSidebar"] div[data-testid="stExpander"] summary{
+  color: #F0F0F5 !important;
 }
 
 /* 입력 필드 다크 */
@@ -747,35 +780,35 @@ def render_project_select():
 .hero-runway{
   position: relative;
   background: linear-gradient(135deg, #0A0A0F 0%, #1A0F2E 40%, #3D1A4D 80%, #FF1493 110%);
-  border-radius: 24px;
-  padding: 56px 48px 48px;
-  margin: 8px 0 32px;
+  border-radius: 20px;
+  padding: 28px 32px;
+  margin: 4px 0 16px;
   overflow: hidden;
   border: 1px solid rgba(255,107,53,.2);
-  box-shadow: 0 20px 80px rgba(255,20,147,.2), 0 0 100px rgba(255,107,53,.1);
+  box-shadow: 0 12px 40px rgba(255,20,147,.18), 0 0 60px rgba(255,107,53,.08);
 }
 .hero-bg-glow{
   position: absolute;
   top: -40%; right: -20%;
   width: 70%; height: 180%;
   background: radial-gradient(circle, rgba(255,107,53,.25) 0%, rgba(255,20,147,.1) 40%, transparent 70%);
-  filter: blur(60px);
+  filter: blur(50px);
   pointer-events: none;
 }
 .hero-content{ position: relative; z-index: 2; max-width: 720px; }
 .hero-eyebrow{
-  font-size: .75rem; font-weight: 700;
-  color: rgba(255,255,255,.75) !important;
-  text-transform: uppercase; letter-spacing: 2.5px;
-  margin-bottom: 16px;
+  font-size: .68rem; font-weight: 700;
+  color: rgba(255,255,255,.7) !important;
+  text-transform: uppercase; letter-spacing: 2px;
+  margin-bottom: 8px;
 }
 .hero-title{
-  margin: 0 0 20px !important;
-  font-size: 2.8rem !important;
+  margin: 0 0 10px !important;
+  font-size: 1.9rem !important;
   font-weight: 800 !important;
   color: #FFFFFF !important;
-  line-height: 1.1 !important;
-  letter-spacing: -.025em !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.02em !important;
   background: none !important;
   -webkit-text-fill-color: #FFFFFF !important;
 }
@@ -787,22 +820,22 @@ def render_project_select():
   display: inline-block;
 }
 .hero-subtitle{
-  font-size: 1.05rem !important;
-  color: rgba(255,255,255,.8) !important;
-  margin: 0 0 32px !important;
-  line-height: 1.6;
+  font-size: .9rem !important;
+  color: rgba(255,255,255,.78) !important;
+  margin: 0 0 16px !important;
+  line-height: 1.5;
 }
 .hero-subtitle strong{ color: #FFFFFF !important; }
 .hero-flow{
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
 }
 .hero-pill{
   background: rgba(255,255,255,.08);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255,255,255,.15);
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-size: .85rem;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: .78rem;
   color: #FFFFFF !important;
   font-weight: 600;
 }
@@ -810,16 +843,16 @@ def render_project_select():
   background: linear-gradient(135deg, rgba(255,107,53,.3) 0%, rgba(255,20,147,.3) 100%);
   border-color: rgba(255,107,53,.5);
   font-weight: 700;
-  box-shadow: 0 4px 20px rgba(255,107,53,.3);
+  box-shadow: 0 2px 12px rgba(255,107,53,.25);
 }
 .hero-arrow{
   color: rgba(255,255,255,.4) !important;
-  font-size: 1.1rem;
+  font-size: .95rem;
 }
 @media (max-width:768px){
-  .hero-runway{ padding: 32px 24px; }
-  .hero-title{ font-size: 1.8rem !important; }
-  .hero-subtitle{ font-size: .9rem !important; }
+  .hero-runway{ padding: 20px 18px; }
+  .hero-title{ font-size: 1.4rem !important; }
+  .hero-subtitle{ font-size: .82rem !important; }
 }
 </style>
 """, unsafe_allow_html=True)
