@@ -423,23 +423,19 @@ div[data-testid="stExpander"] *{ color: #E5E5EB !important; }
   transform: translateY(-1px) !important;
 }
 
-/* Primary 버튼 — Pika 네온 그라디언트 (가장 임팩트) */
+/* Primary 버튼 — 깔끔한 단색 + 미세 호버 (Klap 스타일) */
 .stButton>button[kind="primary"]{
-  background: linear-gradient(135deg, #FF6B35 0%, #F7931E 50%, #FF1493 100%) !important;
-  background-size: 200% 200% !important;
+  background: #FF6B35 !important;
   color: #fff !important;
   border: none !important;
-  box-shadow: 0 8px 24px rgba(255,107,53,.35), 0 0 60px rgba(255,20,147,.15) !important;
+  box-shadow: 0 2px 8px rgba(255,107,53,.2) !important;
   font-weight: 700 !important;
-  animation: gradient-shift 4s ease infinite;
+  transition: all .15s ease !important;
 }
 .stButton>button[kind="primary"]:hover{
-  transform: translateY(-2px) !important;
-  box-shadow: 0 12px 32px rgba(255,107,53,.45), 0 0 80px rgba(255,20,147,.25) !important;
-}
-@keyframes gradient-shift{
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  background: #FF8B5B !important;
+  box-shadow: 0 4px 12px rgba(255,107,53,.3) !important;
+  transform: translateY(-1px) !important;
 }
 
 .stButton>button:disabled{
@@ -818,117 +814,23 @@ for k, v in defaults.items():
 
 # ── 프로젝트 선택 화면 ──────────────────────────────────────────
 def render_project_select():
-    # ── Hero 섹션 (Runway 다크 스타일) ──
-    if not st.session_state.get("onboarding_done", False):
-        st.markdown("""
-<div class="hero-runway">
-  <div class="hero-bg-glow"></div>
-  <div class="hero-content">
-    <div class="hero-eyebrow">SHORTS AI · STUDIO</div>
-    <h1 class="hero-title">
-      AI가 만드는 <span class="hero-accent">바이럴 영상</span>
-    </h1>
-    <p class="hero-subtitle">
-      쿠팡 · 부업 · 유튜브 · 브이로그 — 모든 숏폼을 한 곳에서.
-    </p>
-    <div class="hero-flow">
-      <div class="hero-pill">🛒 쿠팡</div>
-      <span class="hero-arrow">→</span>
-      <div class="hero-pill">🎬 영상</div>
-      <span class="hero-arrow">→</span>
-      <div class="hero-pill">🤖 AI 대본</div>
-      <span class="hero-arrow">→</span>
-      <div class="hero-pill">🔗 추적</div>
-      <span class="hero-arrow">→</span>
-      <div class="hero-pill hero-pill-final">📊 매출</div>
-    </div>
+    # ── 미니멀 헤더 (Klap/Pika 스타일 — 1줄, 큰 작업 영역에 양보) ──
+    st.markdown("""
+<div style="display:flex;justify-content:space-between;align-items:center;
+            margin:0 0 20px;padding-bottom:12px;
+            border-bottom:1px solid rgba(255,255,255,.06);">
+  <div>
+    <div style="font-size:.7rem;font-weight:700;color:#FF6B35;
+                letter-spacing:1.5px;text-transform:uppercase;">SHORTS AI · STUDIO</div>
+    <h2 style="margin:2px 0 0;font-size:1.4rem;font-weight:800;color:#FFFFFF;">
+      어떤 영상을 만들까요?
+    </h2>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <span style="font-size:.7rem;color:#9CA3AF;">v1.0 BETA</span>
   </div>
 </div>
-<style>
-.hero-runway{
-  position: relative;
-  background: linear-gradient(135deg, #0A0A0F 0%, #1A0F2E 40%, #3D1A4D 80%, #FF1493 110%);
-  border-radius: 20px;
-  padding: 28px 32px;
-  margin: 4px 0 16px;
-  overflow: hidden;
-  border: 1px solid rgba(255,107,53,.2);
-  box-shadow: 0 12px 40px rgba(255,20,147,.18), 0 0 60px rgba(255,107,53,.08);
-}
-.hero-bg-glow{
-  position: absolute;
-  top: -40%; right: -20%;
-  width: 70%; height: 180%;
-  background: radial-gradient(circle, rgba(255,107,53,.25) 0%, rgba(255,20,147,.1) 40%, transparent 70%);
-  filter: blur(50px);
-  pointer-events: none;
-}
-.hero-content{ position: relative; z-index: 2; max-width: 720px; }
-.hero-eyebrow{
-  font-size: .68rem; font-weight: 700;
-  color: rgba(255,255,255,.7) !important;
-  text-transform: uppercase; letter-spacing: 2px;
-  margin-bottom: 8px;
-}
-.hero-title{
-  margin: 0 0 10px !important;
-  font-size: 1.9rem !important;
-  font-weight: 800 !important;
-  color: #FFFFFF !important;
-  line-height: 1.15 !important;
-  letter-spacing: -.02em !important;
-  background: none !important;
-  -webkit-text-fill-color: #FFFFFF !important;
-}
-.hero-accent{
-  background: linear-gradient(135deg, #FF6B35 0%, #FFB088 50%, #FF1493 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  display: inline-block;
-}
-.hero-subtitle{
-  font-size: .9rem !important;
-  color: rgba(255,255,255,.78) !important;
-  margin: 0 0 16px !important;
-  line-height: 1.5;
-}
-.hero-subtitle strong{ color: #FFFFFF !important; }
-.hero-flow{
-  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
-}
-.hero-pill{
-  background: rgba(255,255,255,.08);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255,255,255,.15);
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: .78rem;
-  color: #FFFFFF !important;
-  font-weight: 600;
-}
-.hero-pill-final{
-  background: linear-gradient(135deg, rgba(255,107,53,.3) 0%, rgba(255,20,147,.3) 100%);
-  border-color: rgba(255,107,53,.5);
-  font-weight: 700;
-  box-shadow: 0 2px 12px rgba(255,107,53,.25);
-}
-.hero-arrow{
-  color: rgba(255,255,255,.4) !important;
-  font-size: .95rem;
-}
-@media (max-width:768px){
-  .hero-runway{ padding: 20px 18px; }
-  .hero-title{ font-size: 1.4rem !important; }
-  .hero-subtitle{ font-size: .82rem !important; }
-}
-</style>
 """, unsafe_allow_html=True)
-        _ob_c = st.columns([1, 2, 1])
-        with _ob_c[1]:
-            if st.button("✨ 시작하기", type="primary", use_container_width=True, key="onboarding_start"):
-                st.session_state.onboarding_done = True
-                st.rerun()
 
     st.markdown('<div class="ux-card"><div class="ux-card-title">HOME</div><h4>📁 프로젝트 선택</h4><p class="ux-sub">프로젝트를 선택하거나 새로 만들어주세요</p></div>', unsafe_allow_html=True)
 
@@ -949,8 +851,38 @@ def render_project_select():
                 else:
                     st.error(f"❌ {_result['reason']}")
 
-    # 새 프로젝트 생성
-    with st.expander("➕ 새 프로젝트 만들기", expanded=not bool(project_store.list_projects())):
+    # ── 🎬 4개 use case 큰 카드 (Klap/HeyGen 스타일) ──
+    _uc_meta = [
+        ("coupang_affiliate", "🛒", "쿠팡 파트너스", "추적 링크 + 매출 회수", "#FF6B35"),
+        ("general_affiliate", "🌍", "기타 부업/제휴", "Amazon · 토스 · 배민 등", "#3B82F6"),
+        ("youtube_review", "📹", "유튜브 리뷰", "광고 수익 + 구독 확보", "#EF4444"),
+        ("personal_vlog", "🎬", "개인 브이로그", "조회수 · 좋아요 중심", "#A855F7"),
+    ]
+    st.markdown("##### 어떤 영상부터 시작?")
+    _uc_cols = st.columns(4)
+    for _idx, (_uc_id, _emoji, _label, _desc, _color) in enumerate(_uc_meta):
+        with _uc_cols[_idx]:
+            if st.button(
+                f"{_emoji}\n\n**{_label}**\n\n{_desc}",
+                key=f"home_uc_{_uc_id}",
+                use_container_width=True,
+            ):
+                # 빠른 시작 — 임시 프로젝트 자동 생성 + STEP 1
+                from datetime import datetime as _dt
+                _pid = project_store.create_project(
+                    f"{_label} — {_dt.now().strftime('%m-%d %H:%M')}",
+                    product_name="", category="기타",
+                )
+                st.session_state.active_project_id = _pid
+                st.session_state.active_use_case = _uc_id
+                st.session_state.app_phase = "pipeline"
+                st.session_state.current_step = 1
+                st.rerun()
+
+    st.markdown("---")
+
+    # 새 프로젝트 생성 (상세 옵션)
+    with st.expander("➕ 새 프로젝트 만들기 (상세 옵션)", expanded=not bool(project_store.list_projects())):
         _np_name = st.text_input("프로젝트 이름", placeholder="예: 배수구 냄새 제거기", key="_new_prj_name")
 
         # ── 🎯 Use Case 선택 (Phase 3 TAM 확장) ──
