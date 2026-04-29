@@ -12,12 +12,12 @@ enableCORS = false
 gatherUsageStats = false  # Streamlit 사용통계 비활성화 (개인정보 보호)
 
 [theme]
-# Runway/Pika 다크 테마
+# Runway/Pika 다크 테마 — 사이드바도 진짜 검정으로 통일
 base = "dark"
 primaryColor = "#FF6B35"             # 주황 액센트
-backgroundColor = "#0A0A0F"          # 진짜 다크 (검정에 가까운 보라)
-secondaryBackgroundColor = "#13131A"  # 카드 배경
-textColor = "#F4F4F8"
+backgroundColor = "#0A0A0F"          # 메인
+secondaryBackgroundColor = "#000000"  # 사이드바·카드 (진짜 검정)
+textColor = "#FFFFFF"                 # 흰 텍스트 강제
 font = "sans serif"
 
 [runner]

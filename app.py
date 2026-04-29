@@ -240,64 +240,108 @@ html, body, [class*="css"]{
 .stMarkdown, .stMarkdown p{ color: #E5E5EB !important; }
 .main .block-container{ padding-top: 0.5rem !important; padding-bottom: 2rem !important; max-width: 1200px !important; }
 
-/* 사이드바 — 진짜 다크 + 텍스트 가독성 강화 */
-[data-testid="stSidebar"]{
-  background: linear-gradient(180deg, #16161F 0%, #1A1A23 100%) !important;
-  border-right: 1px solid rgba(255,255,255,.08) !important;
+/* ═════ 사이드바 — 진짜 검정 + 흰 텍스트 강제 ═════ */
+/* specificity 최대화: section[data-testid] + 모든 자손 + !important */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div,
+section[data-testid="stSidebar"] > div > div{
+  background: #000000 !important;
+  background-color: #000000 !important;
+  border-right: 1px solid rgba(255,255,255,.1) !important;
 }
-[data-testid="stSidebar"] *{ color: #F0F0F5 !important; }
-[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3, [data-testid="stSidebar"] h4,
-[data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6{
+/* 모든 텍스트 요소 흰색 강제 — specificity 강화 */
+section[data-testid="stSidebar"] *,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] h4,
+section[data-testid="stSidebar"] h5,
+section[data-testid="stSidebar"] h6,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] div,
+section[data-testid="stSidebar"] small,
+section[data-testid="stSidebar"] strong,
+section[data-testid="stSidebar"] em,
+section[data-testid="stSidebar"] li,
+section[data-testid="stSidebar"] a,
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] .stMarkdown *{
   color: #FFFFFF !important;
+}
+/* 제목 더 굵게 */
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] h4{
   font-weight: 700 !important;
 }
-[data-testid="stSidebar"] p, [data-testid="stSidebar"] span,
-[data-testid="stSidebar"] label, [data-testid="stSidebar"] div{
-  color: #F0F0F5 !important;
+/* caption은 약간 흐리게 (단, 보일 정도로) */
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] *,
+section[data-testid="stSidebar"] small{
+  color: #C4C4D0 !important;
 }
-[data-testid="stSidebar"] small, [data-testid="stSidebar"] .stCaption,
-[data-testid="stSidebar"] [data-testid="stCaptionContainer"]{
-  color: #B8B8C8 !important;
+section[data-testid="stSidebar"] hr{
+  border-color: rgba(255,255,255,.12) !important;
 }
-[data-testid="stSidebar"] .stMarkdown,
-[data-testid="stSidebar"] .stMarkdown p{
-  color: #F0F0F5 !important;
-}
-[data-testid="stSidebar"] hr{ border-color: rgba(255,255,255,.1) !important; }
-[data-testid="stSidebar"] .stButton>button{
-  background: rgba(255,255,255,.06) !important;
+/* 버튼 — 다크 글래스 */
+section[data-testid="stSidebar"] .stButton > button{
+  background: rgba(255,255,255,.05) !important;
   color: #FFFFFF !important;
-  border: 1px solid rgba(255,255,255,.12) !important;
+  border: 1px solid rgba(255,255,255,.15) !important;
   font-weight: 600 !important;
 }
-[data-testid="stSidebar"] .stButton>button:hover{
+section[data-testid="stSidebar"] .stButton > button *{
+  color: #FFFFFF !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover{
   background: rgba(255,107,53,.15) !important;
-  border-color: rgba(255,107,53,.4) !important;
+  border-color: rgba(255,107,53,.5) !important;
   color: #FF8B5B !important;
 }
-[data-testid="stSidebar"] .stButton>button[kind="primary"]{
+section[data-testid="stSidebar"] .stButton > button:hover *{
+  color: #FF8B5B !important;
+}
+section[data-testid="stSidebar"] .stButton > button[kind="primary"]{
   background: linear-gradient(135deg, #FF6B35 0%, #FF1493 100%) !important;
   color: #FFFFFF !important;
   border: none !important;
-  box-shadow: 0 4px 14px rgba(255,107,53,.35) !important;
+  box-shadow: 0 4px 14px rgba(255,107,53,.4) !important;
 }
-[data-testid="stSidebar"] .stTextInput input,
-[data-testid="stSidebar"] .stTextArea textarea{
-  background: rgba(0,0,0,.3) !important;
+section[data-testid="stSidebar"] .stButton > button[kind="primary"] *{
   color: #FFFFFF !important;
-  border: 1px solid rgba(255,255,255,.15) !important;
 }
-[data-testid="stSidebar"] .stTextInput input::placeholder,
-[data-testid="stSidebar"] .stTextArea textarea::placeholder{
+/* 입력 필드 */
+section[data-testid="stSidebar"] .stTextInput input,
+section[data-testid="stSidebar"] .stTextArea textarea{
+  background: #1A1A1A !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255,255,255,.2) !important;
+}
+section[data-testid="stSidebar"] .stTextInput input::placeholder,
+section[data-testid="stSidebar"] .stTextArea textarea::placeholder{
   color: #888897 !important;
 }
-[data-testid="stSidebar"] div[data-testid="stExpander"]{
-  background: rgba(0,0,0,.2) !important;
-  border: 1px solid rgba(255,255,255,.1) !important;
+section[data-testid="stSidebar"] .stSelectbox > div > div{
+  background: #1A1A1A !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(255,255,255,.2) !important;
 }
-[data-testid="stSidebar"] div[data-testid="stExpander"] summary{
-  color: #F0F0F5 !important;
+/* expander */
+section[data-testid="stSidebar"] div[data-testid="stExpander"]{
+  background: rgba(255,255,255,.03) !important;
+  border: 1px solid rgba(255,255,255,.12) !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stExpander"] summary,
+section[data-testid="stSidebar"] div[data-testid="stExpander"] summary *{
+  color: #FFFFFF !important;
+}
+/* radio button */
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stRadio label *{
+  color: #FFFFFF !important;
 }
 
 /* 입력 필드 다크 */
