@@ -201,7 +201,7 @@ def cleanup_hook_temp_files():
     return removed
 
 
-st.set_page_config(page_title="숏폼 자동화 제작기", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Shorts AI Studio", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
 # ── CSS: Runway/Pika 다크 모드 ─────────────────────────────────────
 st.markdown("""
@@ -228,17 +228,41 @@ st.markdown("""
   --error: #EF4444;
 }
 
-/* 글로벌 다크 — Runway 스타일 */
+/* 글로벌 다크 — Runway 스타일 + 큰 폰트 */
 html, body, [class*="css"]{
   font-family: 'Pretendard', -apple-system, sans-serif !important;
   background: #0A0A0F !important;
   color: #F4F4F8 !important;
+  font-size: 16px !important;  /* 기본 폰트 크기 키움 (이전 14px) */
 }
 .stApp{ background: #0A0A0F !important; color: #F4F4F8 !important; }
 .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6{ color: #F4F4F8 !important; }
-.stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; }
-.stMarkdown, .stMarkdown p{ color: #E5E5EB !important; }
-.main .block-container{ padding-top: 0.5rem !important; padding-bottom: 2rem !important; max-width: 1200px !important; }
+.stApp h1{ font-size: 2rem !important; font-weight: 800 !important; }
+.stApp h2{ font-size: 1.5rem !important; font-weight: 700 !important; }
+.stApp h3{ font-size: 1.2rem !important; font-weight: 700 !important; }
+.stApp h4{ font-size: 1.05rem !important; font-weight: 700 !important; }
+.stApp h5{ font-size: 0.95rem !important; font-weight: 600 !important; }
+.stApp p, .stApp span, .stApp label{ color: #E5E5EB !important; font-size: 0.95rem !important; }
+.stApp p{ line-height: 1.6 !important; }
+.stMarkdown, .stMarkdown p{ color: #E5E5EB !important; font-size: 0.95rem !important; }
+/* 입력 필드 폰트 */
+.stTextInput input, .stTextArea textarea, .stSelectbox > div > div{
+  font-size: 0.95rem !important;
+}
+/* 버튼 폰트 키움 */
+.stButton > button{ font-size: 0.95rem !important; padding: 12px 24px !important; }
+/* 컨테이너 패딩 — viewport 우선 */
+.main .block-container{
+  padding-top: 1rem !important;
+  padding-bottom: 2rem !important;
+  padding-left: 2rem !important;
+  padding-right: 2rem !important;
+  max-width: 1280px !important;
+}
+@media (max-width: 768px){
+  html, body{ font-size: 15px !important; }
+  .main .block-container{ padding: 1rem !important; }
+}
 
 /* ═════ 사이드바 — 진짜 검정 + 흰 텍스트 강제 ═════ */
 /* specificity 최대화: section[data-testid] + 모든 자손 + !important */
@@ -798,14 +822,12 @@ def render_project_select():
 <div class="hero-runway">
   <div class="hero-bg-glow"></div>
   <div class="hero-content">
-    <div class="hero-eyebrow">AI · SHORTFORM · TRACKING</div>
+    <div class="hero-eyebrow">SHORTS AI · STUDIO</div>
     <h1 class="hero-title">
-      쿠팡 URL 한 줄로<br>
-      <span class="hero-accent">매출 나는 영상</span>까지
+      AI가 만드는 <span class="hero-accent">바이럴 영상</span>
     </h1>
     <p class="hero-subtitle">
-      AI 대본 · 영상 편집 · 추적 링크 · 매출 대시보드 — 한 곳에서.<br>
-      다른 도구와 다른 점: <strong>영상마다 매출이 보인다.</strong>
+      쿠팡 · 부업 · 유튜브 · 브이로그 — 모든 숏폼을 한 곳에서.
     </p>
     <div class="hero-flow">
       <div class="hero-pill">🛒 쿠팡</div>
@@ -2733,7 +2755,7 @@ def generate_thumbnail(template, resolution, main_text, sub_text="", product_img
 # ── 헤더 ──────────────────────────────────────────────────────────
 st.markdown("""
 <div style="padding:32px 0 8px;">
-  <h1 style="font-size:2rem;font-weight:800;margin:0;">🎬 숏폼 자동화 제작기</h1>
+  <h1 style="font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-.01em;">🎬 Shorts AI Studio <span style="font-size:.7rem;font-weight:600;color:#FF8B5B;background:rgba(255,107,53,.1);padding:3px 8px;border-radius:6px;margin-left:6px;">BETA</span></h1>
   <p style="color:#8b95a1;font-size:.95rem;margin:4px 0 0;">소스 선택 → 클립 편집 → 자막+음성 → 다운로드</p>
   <p style="color:#FF6B35;font-size:1.25rem;font-weight:700;margin:12px 0 0;text-align:center;">쿠팡 URL 하나로 → 숏폼 영상 완성 ✨</p>
 </div>
@@ -2741,7 +2763,7 @@ st.markdown("""
 
 # ── 사이드바 ──────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🎬 숏폼 자동화")
+    st.markdown("### 🎬 Shorts AI")
     st.markdown("---")
 
     # 프로젝트 정보 표시 (활성 프로젝트가 있을 때)
