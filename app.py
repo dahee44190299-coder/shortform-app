@@ -1223,22 +1223,52 @@ def download_video_ytdlp(url, max_size_mb=100):
     except Exception:
         return None, "yt-dlp 확인 실패"
 
+    # YouTube 봇 차단 우회 — 여러 player client 시도
+    _is_youtube = "youtube.com" in url.lower() or "youtu.be" in url.lower()
+    _client_attempts = (
+        ["ios", "android_creator", "tv_embedded", "web"] if _is_youtube
+        else [None]
+    )
+
+    last_err = ""
+    r = None
+    for _client in _client_attempts:
+        try:
+            cmd = [
+                "yt-dlp",
+                "--no-playlist",
+                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "--merge-output-format", "mp4",
+                f"--max-filesize", f"{max_size_mb}M",
+                "-o", output_template,
+                "--no-overwrites",
+                "--socket-timeout", "30",
+                "--no-check-certificates",
+                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "--extractor-retries", "5",
+                "--retry-sleep", "2",
+            ]
+            if _client:
+                cmd.extend(["--extractor-args", f"youtube:player_client={_client}"])
+            cmd.append(str(url))
+
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if r.returncode == 0:
+                break  # 성공
+            last_err = (r.stderr or "") + (r.stdout or "")
+            # 403 외 다른 에러면 client 변경 무의미 → 즉시 break
+            if "403" not in last_err and "Forbidden" not in last_err:
+                break
+        except subprocess.TimeoutExpired:
+            return None, "다운로드 시간 초과 (5분). 더 짧은 영상을 시도하세요."
+        except Exception as e:
+            last_err = str(e)[:200]
+            break
+
+    if r is None:
+        return None, f"yt-dlp 실행 실패: {last_err[:200]}"
+
     try:
-        cmd = [
-            "yt-dlp",
-            "--no-playlist",
-            "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            f"--max-filesize", f"{max_size_mb}M",
-            "-o", output_template,
-            "--no-overwrites",
-            "--socket-timeout", "30",
-            "--no-check-certificates",
-            "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "--extractor-retries", "3",
-            str(url),
-        ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if r.returncode != 0:
             err_all = (r.stderr or "") + (r.stdout or "")
             err_msg = err_all[-500:]
